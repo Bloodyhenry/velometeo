@@ -77,6 +77,23 @@ export async function injectWeatherOnKomootMap(
     }
 
     // 1. Recherche robuste de la carte et de son conteneur (gère les classes CSS hashées de Komoot et les iframes)
+    function ensureMapProject(m: any) {
+      if (m && typeof m.project !== 'function') {
+        if (typeof m.latLngToContainerPoint === 'function') {
+          m.project = ([lon, lat]: [number, number]) => {
+            const pt = m.latLngToContainerPoint([lat, lon])
+            return { x: pt.x, y: pt.y }
+          }
+        } else if (typeof m.latLngToLayerPoint === 'function') {
+          m.project = ([lon, lat]: [number, number]) => {
+            const pt = m.latLngToLayerPoint([lat, lon])
+            return { x: pt.x, y: pt.y }
+          }
+        }
+      }
+    }
+
+    // 1. Recherche robuste de la carte et de son conteneur (Komoot, Strava, Leaflet, Mapbox, MapLibre)
     function findMapAndContainer(): { map: any; container: HTMLElement } | null { // eslint-disable-line @typescript-eslint/no-explicit-any
       const searchDocs: Document[] = [document]
       for (const iframe of Array.from(document.querySelectorAll('iframe'))) {
@@ -89,21 +106,50 @@ export async function injectWeatherOnKomootMap(
 
       for (const doc of searchDocs) {
         const win = (doc.defaultView || window) as any // eslint-disable-line @typescript-eslint/no-explicit-any
-        const globalCandidate = win.komootMap || win.map || win.__map
-        if (globalCandidate && typeof globalCandidate.project === 'function') {
-          const el = globalCandidate.getContainer?.() || doc.querySelector('.maplibregl-canvas-container')?.parentElement
-          if (el) return { map: globalCandidate, container: el as HTMLElement }
+        const globalCandidate = win.stravaMap || win.komootMap || win.map || win.__map || win.__velometeoCapturedMap
+        if (globalCandidate) {
+          ensureMapProject(globalCandidate)
+          if (typeof globalCandidate.project === 'function') {
+            const el = globalCandidate.getContainer?.() || doc.querySelector('.maplibregl-canvas-container, .mapboxgl-map, .mapboxgl-canvas-container, .leaflet-container, [class*="Map_map"]')?.parentElement || doc.querySelector('.mapboxgl-map, .leaflet-container')
+            if (el) return { map: globalCandidate, container: el as HTMLElement }
+          }
+        }
+
+        // Strava namespace globals
+        if (win.Strava) {
+          const stravaCandidates = [
+            win.Strava.map,
+            win.Strava.page?.map,
+            win.Strava.activityView?.map,
+            win.Strava.routeBuilder?.map,
+            win.Strava.Maps?.map,
+          ]
+          for (const cand of stravaCandidates) {
+            if (cand) {
+              ensureMapProject(cand)
+              if (typeof cand.project === 'function') {
+                const el = cand.getContainer?.() || doc.querySelector('.mapboxgl-map, .leaflet-container, [class*="Map_map"]')
+                if (el) return { map: cand, container: el as HTMLElement }
+              }
+            }
+          }
         }
 
         const docCanvases = Array.from(
           doc.querySelectorAll<HTMLCanvasElement>(
-            'canvas.maplibregl-canvas, canvas.mapboxgl-canvas, .maplibregl-canvas-container canvas, canvas'
+            'canvas.maplibregl-canvas, canvas.mapboxgl-canvas, .maplibregl-canvas-container canvas, .mapboxgl-canvas-container canvas, #canvas, [class*="CoreMap"] canvas, [class*="Map_map"] canvas, canvas'
           )
         ).filter((c) => (c.offsetWidth || c.width) > 100 && (c.offsetHeight || c.height) > 100)
 
         for (const canvas of docCanvases) {
           const container =
             (canvas.closest('.maplibregl-canvas-container')?.parentElement as HTMLElement) ||
+            (canvas.closest('.mapboxgl-canvas-container')?.parentElement as HTMLElement) ||
+            (canvas.closest('.mapboxgl-map') as HTMLElement) ||
+            (canvas.closest('.leaflet-container') as HTMLElement) ||
+            (canvas.closest('[class*="CoreMap_coreMap"]') as HTMLElement) ||
+            (canvas.closest('[class*="Map_map"]') as HTMLElement) ||
+            (canvas.closest('[class*="map-container"]') as HTMLElement) ||
             (canvas.parentElement?.parentElement as HTMLElement) ||
             (canvas.parentElement as HTMLElement)
 
@@ -113,14 +159,17 @@ export async function injectWeatherOnKomootMap(
 
           for (const el of elementsToSearch) {
             // Propriétés directes
-            for (const k of ['_map', 'map', '__map', 'maplibregl', 'mapboxgl']) {
+            for (const k of ['_map', 'map', '__map', 'maplibregl', 'mapboxgl', '__mapboxgl__', '_leaflet_map', '_leaflet']) {
               const m = (el as any)[k] // eslint-disable-line @typescript-eslint/no-explicit-any
-              if (m && typeof m.project === 'function') {
-                return { map: m, container }
+              if (m) {
+                ensureMapProject(m)
+                if (typeof m.project === 'function') {
+                  return { map: m, container }
+                }
               }
             }
 
-            // Arbre React Fiber (Komoot stocke l'instance MapLibre dans Context / props / hooks)
+            // Arbre React Fiber (Komoot et Strava stockent leurs instances dans Props / Context / State)
             for (const prop of Object.getOwnPropertyNames(el)) {
               if (prop.startsWith('__reactFiber$') || prop.startsWith('__reactInternalInstance$')) {
                 let curr = (el as any)[prop] // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -128,15 +177,29 @@ export async function injectWeatherOnKomootMap(
                 while (curr && depth < 60) {
                   const p = curr.memoizedProps
                   if (p) {
+                    ensureMapProject(p)
                     if (typeof p.project === 'function') return { map: p, container }
-                    if (p.map && typeof p.map.project === 'function') return { map: p.map, container }
-                    if (p.mapGl?.map && typeof p.mapGl.map.project === 'function') return { map: p.mapGl.map, container }
-                    if (p.value?.map && typeof p.value.map.project === 'function') return { map: p.value.map, container }
+                    if (p.map) {
+                      ensureMapProject(p.map)
+                      if (typeof p.map.project === 'function') return { map: p.map, container }
+                    }
+                    if (p.mapGl?.map) {
+                      ensureMapProject(p.mapGl.map)
+                      if (typeof p.mapGl.map.project === 'function') return { map: p.mapGl.map, container }
+                    }
+                    if (p.value?.map) {
+                      ensureMapProject(p.value.map)
+                      if (typeof p.value.map.project === 'function') return { map: p.value.map, container }
+                    }
                     for (const k of Object.keys(p)) {
                       const val = p[k]
                       if (val && typeof val === 'object') {
+                        ensureMapProject(val)
                         if (typeof val.project === 'function') return { map: val, container }
-                        if (val.map && typeof val.map.project === 'function') return { map: val.map, container }
+                        if (val.map) {
+                          ensureMapProject(val.map)
+                          if (typeof val.map.project === 'function') return { map: val.map, container }
+                        }
                       }
                     }
                   }
@@ -146,17 +209,28 @@ export async function injectWeatherOnKomootMap(
                   while (state && sDepth < 35) {
                     const val = state.memoizedState
                     if (val && typeof val === 'object') {
+                      ensureMapProject(val)
                       if (typeof val.project === 'function') return { map: val, container }
-                      if (val.current && typeof val.current.project === 'function') return { map: val.current, container }
-                      if (val.map && typeof val.map.project === 'function') return { map: val.map, container }
+                      if (val.current) {
+                        ensureMapProject(val.current)
+                        if (typeof val.current.project === 'function') return { map: val.current, container }
+                      }
+                      if (val.map) {
+                        ensureMapProject(val.map)
+                        if (typeof val.map.project === 'function') return { map: val.map, container }
+                      }
                     }
                     state = state.next
                     sDepth++
                   }
 
                   if (curr.stateNode && typeof curr.stateNode === 'object') {
+                    ensureMapProject(curr.stateNode)
                     if (typeof curr.stateNode.project === 'function') return { map: curr.stateNode, container }
-                    if (curr.stateNode.map && typeof curr.stateNode.map.project === 'function') return { map: curr.stateNode.map, container }
+                    if (curr.stateNode.map) {
+                      ensureMapProject(curr.stateNode.map)
+                      if (typeof curr.stateNode.map.project === 'function') return { map: curr.stateNode.map, container }
+                    }
                   }
 
                   curr = curr.return
@@ -170,13 +244,17 @@ export async function injectWeatherOnKomootMap(
       return null
     }
 
-    // Gestion du lazy-loading Komoot (sur la vue standard, la carte n'est montée que lors du défilement)
+    // Gestion de l'attente du montage de la carte (Komoot & Strava)
     async function waitForMapAndContainer(): Promise<{ map: any; container: HTMLElement } | null> { // eslint-disable-line @typescript-eslint/no-explicit-any
-      for (let attempt = 0; attempt < 8; attempt++) {
+      const isStrava = window.location.hostname.includes('strava.')
+      const isZoomView = window.location.pathname.includes('/zoom')
+
+      for (let attempt = 0; attempt < 12; attempt++) {
         const res = findMapAndContainer()
         if (res) return res
 
-        if (attempt === 0 && !window.location.pathname.includes('/zoom')) {
+        // Ne scroller vers 1100 que sur Komoot vue standard (pas sur Zoom ni sur Strava)
+        if (attempt === 0 && !isZoomView && !isStrava) {
           window.scrollTo({ top: 1100, behavior: 'auto' })
         }
         await new Promise((r) => setTimeout(r, 350))
@@ -188,7 +266,7 @@ export async function injectWeatherOnKomootMap(
     if (!resolved) {
       return {
         success: false,
-        message: 'Impossible de localiser la carte Komoot sur la page. Faites défiler jusqu’à la carte ou attendez son chargement.',
+        message: 'Impossible de localiser la carte sur la page. Attendez son chargement ou faites défiler jusqu’à elle.',
       }
     }
 
@@ -379,12 +457,17 @@ export async function injectWeatherOnKomootMap(
 
     // 5. Widget flottant VeloMétéo avec Sliders interactifs
     const isZoomView = window.location.pathname.includes('/zoom')
+    const isStrava = window.location.hostname.includes('strava.')
     const widget = document.createElement('div')
     widget.id = 'velometeo-floating-widget'
     widget.style.position = 'absolute'
     if (isZoomView) {
       widget.style.top = '135px'
       widget.style.right = '70px'
+      widget.style.left = 'auto'
+    } else if (isStrava) {
+      widget.style.top = '70px'
+      widget.style.right = '20px'
       widget.style.left = 'auto'
     } else {
       widget.style.top = '12px'
@@ -633,15 +716,20 @@ export async function injectWeatherOnKomootMap(
       }
     }
 
-    // Défilement doux vers la carte pour une visibilité immédiate
-    mapContainer.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Défilement doux vers la carte pour une visibilité immédiate (Komoot)
+    if (!isStrava) {
+      mapContainer.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
 
     return {
       success: true,
-      message: `${payload.checkpoints.length} balises météo superposées sur la carte Komoot.`,
+      message: `${payload.checkpoints.length} balises météo superposées sur la carte.`,
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue'
     return { success: false, message: msg }
   }
 }
+
+export const injectWeatherOnMap = injectWeatherOnKomootMap
+

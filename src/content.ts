@@ -1,6 +1,6 @@
 /**
- * Content script VeloMétéo injecté automatiquement dans les pages Komoot (world: 'MAIN')
- * Détecte les parcours, extrait les coordonnées, interroge Open-Meteo
+ * Content script VeloMétéo injecté automatiquement dans les pages Komoot et Strava (world: 'MAIN')
+ * Détecte les parcours et activités, extrait les coordonnées, interroge Open-Meteo
  * et affiche les balises météo ainsi que les sliders de réglage directement sur la carte.
  */
 
@@ -9,6 +9,7 @@ import { fetchWeatherForCheckpoints, computeRideWeatherSummary, getWmoWeatherDet
 import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './services/komoot-in-page'
 import { coordinatesToGpx } from './services/page-detector'
 import { parseGpxString } from './services/gpx'
+import { getStravaInfoFromUrl, fetchStravaGpx } from './services/strava'
 import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
 
 function getDefaultDepartureTime(): string {
@@ -26,6 +27,12 @@ function getDefaultDepartureTime(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+interface TourItem {
+  platform: 'komoot' | 'strava'
+  id: string
+  type?: 'route' | 'activity' | 'tour'
+}
+
 let activeTourId: string | null = null
 let cachedRoute: RouteData | null = null
 let isRunning = false
@@ -36,9 +43,18 @@ let currentSettings: RideSettings = {
   checkpointIntervalKm: 10,
 }
 
-function getTourIdFromUrl(): string | null {
-  const match = window.location.pathname.match(/\/(?:tour|smarttour)\/([r]?\d+)/)
-  return match ? match[1] : null
+function getCurrentTourItem(): TourItem | null {
+  const host = window.location.hostname
+  const path = window.location.pathname
+
+  if (/komoot\.(com|de|fr|it|es|nl)/i.test(host)) {
+    const match = path.match(/\/(?:tour|smarttour)\/([r]?\d+)/)
+    if (match) return { platform: 'komoot', id: match[1], type: 'tour' }
+  } else if (/strava\.com/i.test(host)) {
+    const info = getStravaInfoFromUrl(path)
+    if (info) return { platform: 'strava', id: info.id, type: info.type }
+  }
+  return null
 }
 
 function buildPayload(
@@ -120,12 +136,14 @@ async function handleSettingsChange(partial: {
 window.__velometeoOnSettingsChange = handleSettingsChange
 
 async function runAutoWeather(): Promise<void> {
-  const tourId = getTourIdFromUrl()
-  if (!tourId) return
+  const item = getCurrentTourItem()
+  if (!item) return
 
-  // Évite de ré-exécuter en boucle si déjà injecté sur le même tour
+  const itemKey = `${item.platform}-${item.type || 'tour'}-${item.id}`
+
+  // Évite de ré-exécuter en boucle si déjà injecté sur le même tour ou activité
   // @ts-expect-error global flag
-  if (window.__velometeoInjectedTour === tourId && document.getElementById('velometeo-komoot-overlay')) {
+  if (window.__velometeoInjectedTour === itemKey && document.getElementById('velometeo-komoot-overlay')) {
     return
   }
 
@@ -133,30 +151,46 @@ async function runAutoWeather(): Promise<void> {
   isRunning = true
 
   try {
-    const search = window.location.search
-    const coordsUrl = `/api/v007/tours/${tourId}/coordinates${search}`
-    const res = await fetch(coordsUrl, {
-      credentials: 'include',
-      headers: { Accept: 'application/hal+json,application/json,*/*' },
-    })
+    let gpxText: string | null = null
 
-    if (!res.ok) {
-      isRunning = false
+    if (item.platform === 'komoot') {
+      const search = window.location.search
+      const coordsUrl = `/api/v007/tours/${item.id}/coordinates${search}`
+      const res = await fetch(coordsUrl, {
+        credentials: 'include',
+        headers: { Accept: 'application/hal+json,application/json,*/*' },
+      })
+
+      if (!res.ok) {
+        isRunning = false
+        return
+      }
+
+      const data = await res.json()
+      const rawItems: Array<{ lat: number; lng?: number; lon?: number; alt?: number }> = data?.items
+      if (!Array.isArray(rawItems) || rawItems.length < 2) {
+        isRunning = false
+        return
+      }
+
+      const titleEl = document.querySelector('h1')
+      const rawTitle = titleEl?.textContent?.trim() || document.title
+      const tourTitle = rawTitle.replace(/\s*[-|•].*komoot.*$/i, '').trim() || `Tour Komoot #${item.id}`
+      gpxText = coordinatesToGpx(rawItems, tourTitle)
+    } else if (item.platform === 'strava') {
+      gpxText = await fetchStravaGpx({ id: item.id, type: item.type as 'route' | 'activity' })
+    }
+
+    if (!gpxText) {
+      // Nouvelle tentative différée si les éléments ou la carte sont encore en cours de montage
+      setTimeout(() => {
+        if (!document.getElementById('velometeo-komoot-overlay')) {
+          runAutoWeather()
+        }
+      }, 1500)
       return
     }
 
-    const data = await res.json()
-    const rawItems: Array<{ lat: number; lng?: number; lon?: number; alt?: number }> = data?.items
-    if (!Array.isArray(rawItems) || rawItems.length < 2) {
-      isRunning = false
-      return
-    }
-
-    const titleEl = document.querySelector('h1')
-    const rawTitle = titleEl?.textContent?.trim() || document.title
-    const tourTitle = rawTitle.replace(/\s*[-|•].*komoot.*$/i, '').trim() || `Tour Komoot #${tourId}`
-
-    const gpxText = coordinatesToGpx(rawItems, tourTitle)
     cachedRoute = parseGpxString(gpxText)
 
     // 1. Calculs physiques de timing
@@ -171,14 +205,14 @@ async function runAutoWeather(): Promise<void> {
     // 4. Synthèse globale de la sortie
     const summary = computeRideWeatherSummary(withWeather)
 
-    // 5. Préparation du payload et injection sur la carte Komoot
+    // 5. Préparation du payload et injection sur la carte
     const payload = buildPayload(withWeather, summary, currentSettings)
 
     const injectRes = await injectWeatherOnKomootMap(payload, handleSettingsChange)
     if (injectRes.success) {
-      activeTourId = tourId
+      activeTourId = itemKey
       // @ts-expect-error global flag
-      window.__velometeoInjectedTour = tourId
+      window.__velometeoInjectedTour = itemKey
     } else {
       console.warn('[VeloMétéo] Carte non encore prête, nouvelle tentative sous peu :', injectRes.message)
       setTimeout(() => {
@@ -203,19 +237,23 @@ if (document.readyState === 'loading') {
   runAutoWeather()
 }
 
-// Surveillance des navigations SPA internes sur Komoot (ex: changement de tour sans rechargement de page)
+// Surveillance des navigations SPA internes sur Komoot et Strava
 let lastPath = window.location.pathname
 setInterval(() => {
   if (window.location.pathname !== lastPath) {
     lastPath = window.location.pathname
-    if (getTourIdFromUrl() !== activeTourId) {
+    const current = getCurrentTourItem()
+    const itemKey = current ? `${current.platform}-${current.type || 'tour'}-${current.id}` : null
+    if (itemKey && itemKey !== activeTourId) {
       runAutoWeather()
     }
   }
 }, 1200)
 
 window.addEventListener('popstate', () => {
-  if (getTourIdFromUrl() !== activeTourId) {
+  const current = getCurrentTourItem()
+  const itemKey = current ? `${current.platform}-${current.type || 'tour'}-${current.id}` : null
+  if (itemKey && itemKey !== activeTourId) {
     runAutoWeather()
   }
 })

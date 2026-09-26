@@ -228,7 +228,7 @@ export function App() {
                   {fileName || detectedTab.title}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Parcours Komoot synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.
+                  {detectedTab.platform === 'strava' ? 'Parcours ou activité Strava' : 'Parcours Komoot'} synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.
                 </p>
               </div>
             </div>

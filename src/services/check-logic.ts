@@ -149,4 +149,29 @@ assert(
 
 console.log(`✓ Out-and-back (aller/retour) marker de-collision OK (dist NS: ${Math.round(distNS)}px, dist EW: ${Math.round(distEW)}px)`)
 
+// 9. Check Strava URL Detection and Polyline Decoding
+import { getStravaInfoFromUrl, decodePolyline } from './strava'
+
+// Route detection
+const routeInfo = getStravaInfoFromUrl('/routes/30528612')
+assert.deepStrictEqual(routeInfo, { id: '30528612', type: 'route' }, 'Strava route detection failed')
+
+// Activity detection
+const activityInfo = getStravaInfoFromUrl('/activities/1234567890/overview')
+assert.deepStrictEqual(activityInfo, { id: '1234567890', type: 'activity' }, 'Strava activity detection failed')
+
+// Non-matching page
+const nonStrava = getStravaInfoFromUrl('/dashboard')
+assert.strictEqual(nonStrava, null, 'Non-route Strava page should return null')
+
+// Polyline decoding check (official Google encoded polyline example: ~38.5, -120.2 to ~40.7, -120.95 to ~43.252, -126.453)
+const testPolyline = '_p~iF~ps|U_ulLnnqC_mqNvxq`@'
+const decoded = decodePolyline(testPolyline)
+assert.strictEqual(decoded.length, 3, 'Decoded polyline length should be 3')
+assert(Math.abs(decoded[0].lat - 38.5) < 0.001 && Math.abs(decoded[0].lng - -120.2) < 0.001, 'Point 1 mismatch')
+assert(Math.abs(decoded[1].lat - 40.7) < 0.001 && Math.abs(decoded[1].lng - -120.95) < 0.001, 'Point 2 mismatch')
+assert(Math.abs(decoded[2].lat - 43.252) < 0.001 && Math.abs(decoded[2].lng - -126.453) < 0.001, 'Point 3 mismatch')
+console.log('✓ Strava URL parser and polyline decoder OK')
+
 console.log('All core logic checks passed successfully! 🎉')
+

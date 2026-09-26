@@ -292,6 +292,17 @@ export async function detectActiveTourTab(): Promise<DetectedTabInfo | null> {
       }
     }
 
+    if (/strava\.com\/(routes|activities)\/([r]?\d+)/i.test(url)) {
+      const match = url.match(/\/(routes|activities)\/([r]?\d+)/i)
+      return {
+        tabId: tab.id,
+        platform: 'strava',
+        url,
+        title: tab.title || 'Strava',
+        tourId: match ? match[2] : undefined,
+      }
+    }
+
     return null
   } catch (err) {
     console.warn('Erreur lors de la détection de l’onglet actif :', err)
@@ -301,14 +312,14 @@ export async function detectActiveTourTab(): Promise<DetectedTabInfo | null> {
 
 /**
  * Déclenche l'extraction du parcours sur l'onglet actif et le convertit en GPX.
- * Combine un fetch direct depuis le contexte de l'extension (avec host_permissions et share_token)
+ * Combine un fetch direct depuis le contexte de l'extension (avec host_permissions et session cookies)
  * et une injection dans la page si nécessaire.
  */
 export async function extractFromActiveTab(
   tabInfo: DetectedTabInfo
 ): Promise<ExtractionResult> {
-  // 1. TENTATIVE IMMÉDIATE : Fetch direct depuis l'extension (rapide, conserve les query params dont share_token)
-  if (tabInfo.tourId) {
+  // 1. TENTATIVE IMMÉDIATE : Fetch direct depuis l'extension (rapide, conserve les query params et cookies)
+  if (tabInfo.platform === 'komoot' && tabInfo.tourId) {
     try {
       const parsedUrl = new URL(tabInfo.url)
       const directUrl = `https://${parsedUrl.hostname}/api/v007/tours/${tabInfo.tourId}/coordinates${parsedUrl.search}`
@@ -327,7 +338,30 @@ export async function extractFromActiveTab(
         }
       }
     } catch (e) {
-      console.warn("Tentative de fetch direct échouée, passage à l'injection page :", e)
+      console.warn("Tentative de fetch direct Komoot échouée, passage à l'injection page :", e)
+    }
+  } else if (tabInfo.platform === 'strava' && tabInfo.tourId) {
+    const isRoute = tabInfo.url.includes('/routes/')
+    const exportUrl = isRoute
+      ? `https://www.strava.com/routes/${tabInfo.tourId}/export_gpx`
+      : `https://www.strava.com/activities/${tabInfo.tourId}/export_gpx`
+    try {
+      const directRes = await fetch(exportUrl, {
+        credentials: 'include',
+        headers: { Accept: 'application/gpx+xml,application/xml,text/xml,*/*' },
+      })
+      if (directRes.ok) {
+        const text = await directRes.text()
+        if (text.includes('<gpx') && text.includes('</gpx>')) {
+          return {
+            success: true,
+            gpxContent: text,
+            tourName: tabInfo.title || (isRoute ? 'Itinéraire Strava' : 'Activité Strava'),
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Tentative de fetch direct Strava échouée :", e)
     }
   }
 
@@ -353,15 +387,15 @@ export async function extractFromActiveTab(
     if (!result || !result.success || !result.items) {
       return {
         success: false,
-        error: result?.error || "Échec de l'extraction des coordonnées du tour Komoot.",
+        error: result?.error || "Échec de l'extraction des coordonnées du tour.",
       }
     }
 
-    const gpx = coordinatesToGpx(result.items, result.title || tabInfo.title || 'Parcours Komoot')
+    const gpx = coordinatesToGpx(result.items, result.title || tabInfo.title || 'Parcours')
     return {
       success: true,
       gpxContent: gpx,
-      tourName: result.title || tabInfo.title || 'Parcours Komoot',
+      tourName: result.title || tabInfo.title || 'Parcours',
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erreur lors de l'injection du script"

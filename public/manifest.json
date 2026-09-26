@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "VeloMétéo - Météo & Vent pour cyclistes",
   "version": "1.1.0",
-  "description": "Prévisions météo heure par heure et calcul du vent relatif le long de vos parcours vélo (fichiers GPX et compatible Komoot).",
+  "description": "Prévisions météo heure par heure et calcul du vent relatif le long de vos parcours vélo (fichiers GPX, compatible Komoot et Strava).",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -35,6 +35,7 @@
     "*://*.komoot.it/*",
     "*://*.komoot.es/*",
     "*://*.komoot.nl/*",
+    "*://*.strava.com/*",
     "https://api.open-meteo.com/*",
     "https://*.tile.openstreetmap.org/*"
   ],
@@ -46,7 +47,8 @@
         "*://*.komoot.fr/*",
         "*://*.komoot.it/*",
         "*://*.komoot.es/*",
-        "*://*.komoot.nl/*"
+        "*://*.komoot.nl/*",
+        "*://*.strava.com/*"
       ],
       "js": ["content.js"],
       "world": "MAIN",
