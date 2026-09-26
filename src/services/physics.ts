@@ -176,3 +176,76 @@ export function generateCheckpoints(
     }
   })
 }
+
+/**
+ * Calcule les positions écran dé-collisionnées pour éviter la superposition des balises,
+ * particulièrement sur les parcours en aller/retour (sur une même route) ou les lacets serrés.
+ *
+ * 1. Décalage latéral perpendiculaire au cap du cycliste (règle de droite).
+ *    Sur un aller/retour, l'aller part à droite (+nx), le retour part à droite de son cap (-nx),
+ *    ce qui les écarte naturellement de part et d'autre de la trace.
+ * 2. Passe de dé-collision en espace écran pour garantir un espacement suffisant et une lisibilité parfaite.
+ */
+export function computeDeCollidedPositions(
+  markers: Array<{ x: number; y: number; bearing?: number }>,
+  options: {
+    lateralOffset?: number
+    pillWidth?: number
+    pillHeight?: number
+  } = {}
+): Array<{ x: number; y: number }> {
+  const lateralOffset = options.lateralOffset ?? 18
+  const pillWidth = options.pillWidth ?? 95
+  const pillHeight = options.pillHeight ?? 26
+
+  // 1. Décalage latéral basé sur le cap (vecteur normal vers la droite)
+  const positions = markers.map((m) => {
+    const rad = ((m.bearing || 0) * Math.PI) / 180
+    // nx = cos(rad), ny = sin(rad)
+    const nx = Math.cos(rad)
+    const ny = Math.sin(rad)
+    return {
+      x: m.x + nx * lateralOffset,
+      y: m.y + ny * lateralOffset,
+    }
+  })
+
+  // 2. Dé-collision en 3 passes de relaxation
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const dx = positions[j].x - positions[i].x
+        const dy = positions[j].y - positions[i].y
+
+        if (Math.abs(dx) < pillWidth && Math.abs(dy) < pillHeight) {
+          // Chevauchement détecté : on écarte verticalement en priorité (pilules larges)
+          const overlapY = pillHeight - Math.abs(dy)
+          const shiftY = Math.max(14, overlapY / 2 + 2)
+
+          if (dy >= 0) {
+            positions[i].y -= shiftY
+            positions[j].y += shiftY
+          } else {
+            positions[i].y += shiftY
+            positions[j].y -= shiftY
+          }
+
+          // Écartement horizontal d'appoint si quasi alignées en X
+          if (Math.abs(dx) < 30) {
+            const shiftX = 16
+            if (dx >= 0) {
+              positions[i].x -= shiftX
+              positions[j].x += shiftX
+            } else {
+              positions[i].x += shiftX
+              positions[j].x += shiftX
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return positions
+}
+

@@ -104,11 +104,19 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         </div>
       `
 
+      // Décalage latéral perpendiculaire au cap pour séparer les balises aller / retour
+      const rad = ((cp.bearing || 0) * Math.PI) / 180
+      const nx = Math.cos(rad)
+      const ny = Math.sin(rad)
+      const LATERAL_OFFSET = 14
+      const anchorX = 16 - Math.round(nx * LATERAL_OFFSET)
+      const anchorY = 21 - Math.round(ny * LATERAL_OFFSET)
+
       const customIcon = L.divIcon({
         className: 'custom-weather-marker',
         html,
         iconSize: [32, 42],
-        iconAnchor: [16, 21],
+        iconAnchor: [anchorX, anchorY],
       })
 
       const marker = L.marker([cp.lat, cp.lon], { icon: customIcon })

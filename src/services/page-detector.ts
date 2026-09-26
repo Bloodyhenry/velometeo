@@ -394,6 +394,7 @@ export async function injectWeatherIntoKomootTab(
         id: cp.id,
         lat: cp.lat,
         lon: cp.lon,
+        bearing: cp.bearing,
         distKm: cp.distKm,
         elevationM: cp.elevationM,
         estimatedTimeStr: cp.estimatedTime.toLocaleTimeString([], {

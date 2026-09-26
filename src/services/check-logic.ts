@@ -118,4 +118,35 @@ assert(cps5km.length > cps10km.length, `5km checkpoints (${cps5km.length}) shoul
 assert(cps10km.length > cps20km.length, `10km checkpoints (${cps10km.length}) should be > 20km (${cps20km.length})`)
 console.log(`✓ Checkpoint interval scaling OK (5km: ${cps5km.length}, 10km: ${cps10km.length}, 20km: ${cps20km.length})`)
 
+// 8. Check De-collision on Out-and-back (Aller / Retour) traces
+import { computeDeCollidedPositions } from './physics'
+
+// Cas 1 : Aller / retour sur route Nord-Sud (même point (200, 200), sens opposés 0° et 180°)
+const northSouthOverlap = [
+  { x: 200, y: 200, bearing: 0 },
+  { x: 200, y: 200, bearing: 180 },
+]
+const resolvedNS = computeDeCollidedPositions(northSouthOverlap)
+const distNS = Math.hypot(resolvedNS[0].x - resolvedNS[1].x, resolvedNS[0].y - resolvedNS[1].y)
+assert(distNS >= 30, `Distance entre balises aller/retour NS insuffisante: ${distNS}px (doit être >= 30px)`)
+assert(
+  Math.abs(resolvedNS[0].x - resolvedNS[1].x) >= 20 || Math.abs(resolvedNS[0].y - resolvedNS[1].y) >= 25,
+  'Les balises aller/retour NS se chevauchent encore en écran'
+)
+
+// Cas 2 : Aller / retour sur route Est-Ouest (même point (300, 300), sens opposés 90° et 270°)
+const eastWestOverlap = [
+  { x: 300, y: 300, bearing: 90 },
+  { x: 300, y: 300, bearing: 270 },
+]
+const resolvedEW = computeDeCollidedPositions(eastWestOverlap)
+const distEW = Math.hypot(resolvedEW[0].x - resolvedEW[1].x, resolvedEW[0].y - resolvedEW[1].y)
+assert(distEW >= 30, `Distance entre balises aller/retour EW insuffisante: ${distEW}px (doit être >= 30px)`)
+assert(
+  Math.abs(resolvedEW[0].x - resolvedEW[1].x) >= 20 || Math.abs(resolvedEW[0].y - resolvedEW[1].y) >= 25,
+  'Les balises aller/retour EW se chevauchent encore en écran'
+)
+
+console.log(`✓ Out-and-back (aller/retour) marker de-collision OK (dist NS: ${Math.round(distNS)}px, dist EW: ${Math.round(distEW)}px)`)
+
 console.log('All core logic checks passed successfully! 🎉')

@@ -3,11 +3,14 @@
  * pour afficher les balises météo et la jauge de vent directement sur la carte MapLibre/Mapbox.
  */
 
+import { computeDeCollidedPositions } from './physics'
+
 export interface InjectedWeatherPayload {
   checkpoints: Array<{
     id: string
     lat: number
     lon: number
+    bearing?: number
     distKm: number
     elevationM: number
     estimatedTimeStr: string
@@ -221,8 +224,7 @@ export async function injectWeatherOnKomootMap(
     mapContainer.style.position = 'relative'
     mapContainer.appendChild(overlay)
 
-    // 4. Balises météo interactives
-    const markerEls: Array<{ el: HTMLElement; lon: number; lat: number }> = []
+    const markerEls: Array<{ el: HTMLElement; lon: number; lat: number; bearing: number }> = []
 
     function createMarkerElement(cp: InjectedWeatherPayload['checkpoints'][0]): HTMLElement {
       const marker = document.createElement('div')
@@ -322,14 +324,30 @@ export async function injectWeatherOnKomootMap(
     }
 
     function updateMarkerPositions() {
+      if (markerEls.length === 0) return
+
+      const rawPoints: Array<{ x: number; y: number; bearing?: number }> = []
       for (const item of markerEls) {
         try {
           const pt = map.project([item.lon, item.lat])
-          item.el.style.left = `${Math.round(pt.x)}px`
-          item.el.style.top = `${Math.round(pt.y)}px`
+          rawPoints.push({ x: pt.x, y: pt.y, bearing: item.bearing })
         } catch {
-          // ignore si projection non prête
+          rawPoints.push({ x: 0, y: 0, bearing: item.bearing })
         }
+      }
+
+      // Dé-collision des balises (décalage latéral selon cap aller/retour + relaxation d'évitement)
+      const deCollided = computeDeCollidedPositions(rawPoints, {
+        lateralOffset: 18,
+        pillWidth: 95,
+        pillHeight: 26,
+      })
+
+      for (let i = 0; i < markerEls.length; i++) {
+        const el = markerEls[i].el
+        const pos = deCollided[i]
+        el.style.left = `${Math.round(pos.x)}px`
+        el.style.top = `${Math.round(pos.y)}px`
       }
     }
 
@@ -340,7 +358,12 @@ export async function injectWeatherOnKomootMap(
       checkpoints.forEach((cp) => {
         const marker = createMarkerElement(cp)
         overlay.appendChild(marker)
-        markerEls.push({ el: marker, lon: cp.lon, lat: cp.lat })
+        markerEls.push({
+          el: marker,
+          lon: cp.lon,
+          lat: cp.lat,
+          bearing: cp.bearing ?? 0,
+        })
       })
 
       updateMarkerPositions()
