@@ -216,33 +216,41 @@ export function App() {
           </div>
         )}
 
-        {/* En-tête compact si un tour Komoot est détecté, ou upload classique sinon */}
+        {/* En-tête si un tour Komoot est détecté, ou upload & sliders en mode autonome GPX */}
         {detectedTab ? (
-          <div className="bg-white border border-slate-200/90 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="text-xs font-bold text-slate-800 truncate">
-                {fileName || detectedTab.title}
-              </span>
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center text-xl shrink-0">
+                🚴
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-800">
+                  {fileName || detectedTab.title}
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Parcours Komoot synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.
+                </p>
+              </div>
             </div>
-            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
-              Synchronisé sur la carte
+            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full shrink-0">
+              Actif sur la carte
             </span>
           </div>
         ) : (
-          <FileUpload
-            onGpxLoaded={handleGpxLoaded}
-            isLoading={isLoading}
-          />
+          <>
+            <FileUpload
+              onGpxLoaded={handleGpxLoaded}
+              isLoading={isLoading}
+            />
+            {/* Paramètres de simulation en mode autonome GPX */}
+            <Controls
+              settings={settings}
+              onChange={handleSettingsChange}
+              onRefresh={handleManualRefresh}
+              isLoading={isLoading}
+            />
+          </>
         )}
-
-        {/* 2. Barre de commandes (heure, vitesse, dénivelé) */}
-        <Controls
-          settings={settings}
-          onChange={handleSettingsChange}
-          onRefresh={handleManualRefresh}
-          isLoading={isLoading}
-        />
 
         {/* 3. Synthèse de la sortie & jauge de vent */}
         {route && weatherSummary && (
@@ -283,6 +291,33 @@ export function App() {
           />
         )}
       </main>
+
+      {/* Footer d'attributions légales et mentions de responsabilité */}
+      <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-slate-200/80 text-center text-xs text-slate-400 space-y-1.5">
+        <p>
+          Données météo fournies par{' '}
+          <a
+            href="https://open-meteo.com/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-500 hover:text-blue-600 underline underline-offset-2 transition-colors"
+          >
+            Open-Meteo (CC BY 4.0)
+          </a>
+          {' '}• Cartographie ©{' '}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-500 hover:text-blue-600 underline underline-offset-2 transition-colors"
+          >
+            OpenStreetMap
+          </a>
+        </p>
+        <p>
+          VeloMétéo est un projet libre (MIT) et indépendant, non affilié à Komoot GmbH. Données fournies à titre indicatif.
+        </p>
+      </footer>
     </div>
   )
 }

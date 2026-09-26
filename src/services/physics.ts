@@ -113,7 +113,8 @@ export function generateCheckpoints(
   if (points.length < 2) return []
 
   const departureDate = new Date(settings.departureTime)
-  const intervalKm = Math.max(3, settings.checkpointIntervalKm)
+  // Assure que l'intervalle est un nombre valide >= 2 km
+  const intervalKm = Math.max(2, Number(settings.checkpointIntervalKm) || 10)
 
   const chosenIndices = new Set<number>()
   chosenIndices.add(0) // Départ
@@ -122,18 +123,25 @@ export function generateCheckpoints(
   for (let i = 1; i < points.length - 1; i++) {
     if (points[i].dist >= nextTargetKm) {
       chosenIndices.add(i)
-      nextTargetKm += intervalKm
+      while (nextTargetKm <= points[i].dist) {
+        nextTargetKm += intervalKm
+      }
     }
   }
 
-  // Détection des sommets / cols locaux notables (différence > 100m)
-  // ponytail: scan glissant de 20 points pour repérer les sommets sans surcharger d'appels
-  for (let i = 10; i < points.length - 10; i += 5) {
+  // Détection des sommets / cols locaux notables
+  // Uniquement s'ils ne sont pas déjà proches d'un point existant (distance >= 40% de l'intervalle)
+  for (let i = 15; i < points.length - 15; i += 10) {
     const p = points[i]
-    const pBefore = points[i - 10]
-    const pAfter = points[i + 10]
-    if (p.ele > pBefore.ele + 80 && p.ele > pAfter.ele + 80) {
-      chosenIndices.add(i)
+    const pBefore = points[i - 15]
+    const pAfter = points[i + 15]
+    if (p.ele > pBefore.ele + 60 && p.ele > pAfter.ele + 60) {
+      const isTooClose = Array.from(chosenIndices).some(
+        (idx) => Math.abs(points[idx].dist - p.dist) < intervalKm * 0.4
+      )
+      if (!isTooClose) {
+        chosenIndices.add(i)
+      }
     }
   }
 

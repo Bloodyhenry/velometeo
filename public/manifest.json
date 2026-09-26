@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "VeloMétéo - Météo & Vent sur trace GPX & Komoot",
+  "name": "VeloMétéo - Météo & Vent pour cyclistes",
   "version": "1.1.0",
-  "description": "Détection automatique de vos parcours Komoot, prévisions météo heure par heure et calcul du vent relatif (face/dos/côté) le long du trajet.",
+  "description": "Prévisions météo heure par heure et calcul du vent relatif le long de vos parcours vélo (fichiers GPX et compatible Komoot).",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

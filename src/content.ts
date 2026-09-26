@@ -1,7 +1,7 @@
 /**
  * Content script VeloMétéo injecté automatiquement dans les pages Komoot (world: 'MAIN')
  * Détecte les parcours, extrait les coordonnées, interroge Open-Meteo
- * et affiche les balises météo directement sur la carte sans aucune interaction manuelle.
+ * et affiche les balises météo ainsi que les sliders de réglage directement sur la carte.
  */
 
 import { computeTrajectoryTiming, generateCheckpoints } from './services/physics'
@@ -9,7 +9,7 @@ import { fetchWeatherForCheckpoints, computeRideWeatherSummary, getWmoWeatherDet
 import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './services/komoot-in-page'
 import { coordinatesToGpx } from './services/page-detector'
 import { parseGpxString } from './services/gpx'
-import type { RideSettings } from './types'
+import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
 
 function getDefaultDepartureTime(): string {
   const d = new Date()
@@ -27,12 +27,96 @@ function getDefaultDepartureTime(): string {
 }
 
 let activeTourId: string | null = null
+let cachedRoute: RouteData | null = null
 let isRunning = false
+let currentSettings: RideSettings = {
+  departureTime: getDefaultDepartureTime(),
+  targetSpeedKmH: 25,
+  elevationWeight: 0.7,
+  checkpointIntervalKm: 10,
+}
 
 function getTourIdFromUrl(): string | null {
   const match = window.location.pathname.match(/\/(?:tour|smarttour)\/([r]?\d+)/)
   return match ? match[1] : null
 }
+
+function buildPayload(
+  checkpoints: Checkpoint[],
+  summary: SegmentWeatherSummary,
+  settings: RideSettings
+): InjectedWeatherPayload {
+  return {
+    checkpoints: checkpoints.map((cp) => {
+      const w = cp.weather
+      const wmo = w ? getWmoWeatherDetails(w.weatherCode) : { label: 'Météo', icon: '⛅' }
+      return {
+        id: cp.id,
+        lat: cp.lat,
+        lon: cp.lon,
+        distKm: cp.distKm,
+        elevationM: cp.elevationM,
+        estimatedTimeStr: cp.estimatedTime.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        temperature: w?.temperature ?? 18,
+        apparentTemperature: w?.apparentTemperature ?? 18,
+        windSpeed: w?.windSpeed ?? 0,
+        windGusts: w?.windGusts ?? 0,
+        windDirection: w?.windDirection ?? 0,
+        windCategory: w?.windCategory ?? 'headwind',
+        windCategoryLabel: w?.windCategoryLabel ?? 'Vent',
+        windCategoryColor: w?.windCategoryColor ?? '#64748b',
+        weatherIcon: wmo.icon,
+        weatherLabel: wmo.label,
+        precipitationProb: w?.precipitationProb ?? 0,
+        precipitationMm: w?.precipitationMm ?? 0,
+        headwindComponent: w?.headwindComponent ?? 0,
+        crosswindComponent: w?.crosswindComponent ?? 0,
+      }
+    }),
+    summary,
+    settings: {
+      departureTime: settings.departureTime,
+      targetSpeedKmH: settings.targetSpeedKmH,
+      checkpointIntervalKm: settings.checkpointIntervalKm,
+      elevationWeight: settings.elevationWeight,
+    },
+  }
+}
+
+async function handleSettingsChange(partial: {
+  checkpointIntervalKm?: number
+  targetSpeedKmH?: number
+  departureTime?: string
+}): Promise<void> {
+  if (!cachedRoute) return
+  currentSettings = { ...currentSettings, ...partial }
+
+  try {
+    const timings = computeTrajectoryTiming(cachedRoute.points, currentSettings)
+    const baseCheckpoints = generateCheckpoints(cachedRoute, currentSettings, timings)
+    const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints)
+    const summary = computeRideWeatherSummary(withWeather)
+
+    const payload = buildPayload(withWeather, summary, currentSettings)
+
+    // @ts-expect-error global refresh hook
+    if (typeof window.__velometeoRefreshMarkers === 'function') {
+      // @ts-expect-error global refresh hook
+      window.__velometeoRefreshMarkers(payload)
+    } else {
+      await injectWeatherOnKomootMap(payload, handleSettingsChange)
+    }
+  } catch (err) {
+    console.warn('[VeloMétéo] Erreur actualisation météo :', err)
+  }
+}
+
+// Expose au niveau window pour que les sliders puissent l'appeler directement
+// @ts-expect-error global hook
+window.__velometeoOnSettingsChange = handleSettingsChange
 
 async function runAutoWeather(): Promise<void> {
   const tourId = getTourIdFromUrl()
@@ -72,20 +156,13 @@ async function runAutoWeather(): Promise<void> {
     const tourTitle = rawTitle.replace(/\s*[-|•].*komoot.*$/i, '').trim() || `Tour Komoot #${tourId}`
 
     const gpxText = coordinatesToGpx(rawItems, tourTitle)
-    const route = parseGpxString(gpxText)
-
-    const settings: RideSettings = {
-      departureTime: getDefaultDepartureTime(),
-      targetSpeedKmH: 25,
-      elevationWeight: 0.7,
-      checkpointIntervalKm: 10,
-    }
+    cachedRoute = parseGpxString(gpxText)
 
     // 1. Calculs physiques de timing
-    const timings = computeTrajectoryTiming(route.points, settings)
+    const timings = computeTrajectoryTiming(cachedRoute.points, currentSettings)
 
     // 2. Génération des balises le long du trajet
-    const baseCheckpoints = generateCheckpoints(route, settings, timings)
+    const baseCheckpoints = generateCheckpoints(cachedRoute, currentSettings, timings)
 
     // 3. Récupération des prévisions météo Open-Meteo
     const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints)
@@ -94,44 +171,9 @@ async function runAutoWeather(): Promise<void> {
     const summary = computeRideWeatherSummary(withWeather)
 
     // 5. Préparation du payload et injection sur la carte Komoot
-    const payload: InjectedWeatherPayload = {
-      checkpoints: withWeather.map((cp) => {
-        const w = cp.weather
-        const wmo = w ? getWmoWeatherDetails(w.weatherCode) : { label: 'Météo', icon: '⛅' }
-        return {
-          id: cp.id,
-          lat: cp.lat,
-          lon: cp.lon,
-          distKm: cp.distKm,
-          elevationM: cp.elevationM,
-          estimatedTimeStr: cp.estimatedTime.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          temperature: w?.temperature ?? 18,
-          apparentTemperature: w?.apparentTemperature ?? 18,
-          windSpeed: w?.windSpeed ?? 0,
-          windGusts: w?.windGusts ?? 0,
-          windDirection: w?.windDirection ?? 0,
-          windCategory: w?.windCategory ?? 'headwind',
-          windCategoryLabel: w?.windCategoryLabel ?? 'Vent',
-          windCategoryColor: w?.windCategoryColor ?? '#64748b',
-          weatherIcon: wmo.icon,
-          weatherLabel: wmo.label,
-          precipitationProb: w?.precipitationProb ?? 0,
-          precipitationMm: w?.precipitationMm ?? 0,
-          headwindComponent: w?.headwindComponent ?? 0,
-          crosswindComponent: w?.crosswindComponent ?? 0,
-        }
-      }),
-      summary,
-      settings: {
-        departureTime: settings.departureTime,
-        targetSpeedKmH: settings.targetSpeedKmH,
-      },
-    }
+    const payload = buildPayload(withWeather, summary, currentSettings)
 
-    const injectRes = await injectWeatherOnKomootMap(payload)
+    const injectRes = await injectWeatherOnKomootMap(payload, handleSettingsChange)
     if (injectRes.success) {
       activeTourId = tourId
       // @ts-expect-error global flag

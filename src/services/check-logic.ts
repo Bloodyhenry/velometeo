@@ -86,4 +86,36 @@ assert(gpxOutput.includes('<trkpt lat="45.200000" lon="5.800000"><ele>850</ele><
 assert(gpxOutput.includes('<name>Col Test</name>'), 'Missing name in GPX')
 console.log('✓ Komoot coordinates -> GPX converter OK')
 
+// 7. Check Checkpoint Interval Scaling
+import { generateCheckpoints } from './physics'
+import type { RouteData } from '../types'
+
+const longRoutePoints: GpxPoint[] = []
+for (let d = 0; d <= 60; d += 0.5) {
+  longRoutePoints.push({
+    lat: 45.0 + d * 0.01,
+    lon: 5.0,
+    ele: 200,
+    dist: d,
+    slope: 0,
+  })
+}
+const testRoute: RouteData = {
+  name: 'Test 60km',
+  points: longRoutePoints,
+  totalDistanceKm: 60,
+  elevationGainM: 0,
+  elevationLossM: 0,
+  minElevationM: 200,
+  maxElevationM: 200,
+}
+const longTimings = computeTrajectoryTiming(longRoutePoints, settings)
+const cps5km = generateCheckpoints(testRoute, { ...settings, checkpointIntervalKm: 5 }, longTimings)
+const cps10km = generateCheckpoints(testRoute, { ...settings, checkpointIntervalKm: 10 }, longTimings)
+const cps20km = generateCheckpoints(testRoute, { ...settings, checkpointIntervalKm: 20 }, longTimings)
+
+assert(cps5km.length > cps10km.length, `5km checkpoints (${cps5km.length}) should be > 10km (${cps10km.length})`)
+assert(cps10km.length > cps20km.length, `10km checkpoints (${cps10km.length}) should be > 20km (${cps20km.length})`)
+console.log(`✓ Checkpoint interval scaling OK (5km: ${cps5km.length}, 10km: ${cps10km.length}, 20km: ${cps20km.length})`)
+
 console.log('All core logic checks passed successfully! 🎉')

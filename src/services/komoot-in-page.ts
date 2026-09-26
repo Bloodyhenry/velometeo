@@ -40,17 +40,39 @@ export interface InjectedWeatherPayload {
   settings: {
     departureTime: string
     targetSpeedKmH: number
+    checkpointIntervalKm?: number
+    elevationWeight?: number
   }
 }
 
 /**
- * Cette fonction est sérialisée et injectée dans le contexte 'MAIN' de la page Komoot.
+ * Cette fonction est exécutée dans le contexte 'MAIN' de la page Komoot.
  */
-export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload): Promise<{
+export async function injectWeatherOnKomootMap(
+  payload: InjectedWeatherPayload,
+  onSettingsChange?: (partialSettings: {
+    checkpointIntervalKm?: number
+    targetSpeedKmH?: number
+    departureTime?: string
+  }) => Promise<void>
+): Promise<{
   success: boolean
   message?: string
 }> {
   try {
+    if (typeof onSettingsChange === 'function') {
+      // @ts-expect-error global hook
+      window.__velometeoOnSettingsChange = onSettingsChange
+    }
+
+    // Si l'overlay et la fonction de rafraîchissement existent déjà, mise à jour rapide sans reconstruction
+    // @ts-expect-error global hook
+    if (typeof window.__velometeoRefreshMarkers === 'function' && document.getElementById('velometeo-komoot-overlay')) {
+      // @ts-expect-error global hook
+      window.__velometeoRefreshMarkers(payload)
+      return { success: true, message: 'Balises mises à jour.' }
+    }
+
     // 1. Recherche robuste de la carte et de son conteneur (gère les classes CSS hashées de Komoot et les iframes)
     function findMapAndContainer(): { map: any; container: HTMLElement } | null { // eslint-disable-line @typescript-eslint/no-explicit-any
       const searchDocs: Document[] = [document]
@@ -199,10 +221,10 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
     mapContainer.style.position = 'relative'
     mapContainer.appendChild(overlay)
 
-    // 4. Création des balises météo interactives
+    // 4. Balises météo interactives
     const markerEls: Array<{ el: HTMLElement; lon: number; lat: number }> = []
 
-    payload.checkpoints.forEach((cp) => {
+    function createMarkerElement(cp: InjectedWeatherPayload['checkpoints'][0]): HTMLElement {
       const marker = document.createElement('div')
       marker.style.position = 'absolute'
       marker.style.transform = 'translate(-50%, -50%)'
@@ -279,44 +301,26 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
         <div style="color: ${cp.windCategoryColor}; font-weight: bold;">
           ${cp.windCategoryLabel} (${cp.windSpeed} km/h)
         </div>
-        <div style="color: #94a3b8; font-size: 10px; margin-top: 2px;">
-          Rafales : ${cp.windGusts} km/h • Pluie : ${cp.precipitationProb}%
+        <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">
+          Rafales : ${cp.windGusts} km/h • Pluie : ${cp.precipitationProb}% (${cp.precipitationMm} mm)
         </div>
       `
       marker.appendChild(tooltip)
 
-      let tooltipOpen = false
-      const showTooltip = () => {
-        marker.style.transform = 'translate(-50%, -50%) scale(1.15)'
-        marker.style.zIndex = '50'
+      marker.addEventListener('mouseenter', () => {
         tooltip.style.display = 'block'
-      }
-      const hideTooltip = () => {
-        if (!tooltipOpen) {
-          marker.style.transform = 'translate(-50%, -50%) scale(1)'
-          marker.style.zIndex = '10'
-          tooltip.style.display = 'none'
-        }
-      }
-
-      marker.addEventListener('mouseenter', showTooltip)
-      marker.addEventListener('mouseleave', hideTooltip)
-      marker.addEventListener('click', (e) => {
-        e.stopPropagation()
-        tooltipOpen = !tooltipOpen
-        if (tooltipOpen) showTooltip()
-        else {
-          marker.style.transform = 'translate(-50%, -50%) scale(1)'
-          marker.style.zIndex = '10'
-          tooltip.style.display = 'none'
-        }
+        marker.style.transform = 'translate(-50%, -50%) scale(1.1)'
+        marker.style.zIndex = '50'
+      })
+      marker.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none'
+        marker.style.transform = 'translate(-50%, -50%) scale(1)'
+        marker.style.zIndex = '10'
       })
 
-      overlay.appendChild(marker)
-      markerEls.push({ el: marker, lon: cp.lon, lat: cp.lat })
-    })
+      return marker
+    }
 
-    // 5. Fonction de mise à jour des positions écran lors des mouvements de carte
     function updateMarkerPositions() {
       for (const item of markerEls) {
         try {
@@ -324,38 +328,38 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
           item.el.style.left = `${Math.round(pt.x)}px`
           item.el.style.top = `${Math.round(pt.y)}px`
         } catch {
-          // ignore
+          // ignore si projection non prête
         }
       }
     }
 
-    // Mise à jour immédiate
-    updateMarkerPositions()
+    function renderMarkers(checkpoints: InjectedWeatherPayload['checkpoints']) {
+      overlay.innerHTML = ''
+      markerEls.length = 0
+
+      checkpoints.forEach((cp) => {
+        const marker = createMarkerElement(cp)
+        overlay.appendChild(marker)
+        markerEls.push({ el: marker, lon: cp.lon, lat: cp.lat })
+      })
+
+      updateMarkerPositions()
+    }
+
+    // Rendu initial des marqueurs
+    renderMarkers(payload.checkpoints)
 
     // Abonnement aux événements de déplacement de la carte Mapbox/MapLibre
     map.on('move', updateMarkerPositions)
     map.on('zoom', updateMarkerPositions)
     map.on('resize', updateMarkerPositions)
 
-    // Enregistrement du nettoyeur pour les futures réinjections
-    // @ts-expect-error cleanup hook
-    window.__velometeoCleanup = () => {
-      try {
-        map.off('move', updateMarkerPositions)
-        map.off('zoom', updateMarkerPositions)
-        map.off('resize', updateMarkerPositions)
-      } catch {
-        // ignore
-      }
-    }
-
-    // 6. Widget flottant VeloMétéo
+    // 5. Widget flottant VeloMétéo avec Sliders interactifs
     const isZoomView = window.location.pathname.includes('/zoom')
     const widget = document.createElement('div')
     widget.id = 'velometeo-floating-widget'
     widget.style.position = 'absolute'
     if (isZoomView) {
-      // Sur la vue /zoom, le volet de gauche Komoot occupe ~400px. On place le widget à droite sous les boutons d'action.
       widget.style.top = '135px'
       widget.style.right = '70px'
       widget.style.left = 'auto'
@@ -365,64 +369,188 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
       widget.style.right = 'auto'
     }
     widget.style.zIndex = '500'
-    widget.style.background = 'rgba(255, 255, 255, 0.95)'
+    widget.style.background = 'rgba(255, 255, 255, 0.96)'
     widget.style.backdropFilter = 'blur(10px)'
     widget.style.borderRadius = '14px'
-    widget.style.padding = '10px 14px'
-    widget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.06)'
+    widget.style.padding = '12px 14px'
+    widget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0,0,0,0.06)'
     widget.style.fontFamily = 'system-ui, -apple-system, sans-serif'
-    widget.style.width = '250px'
+    widget.style.width = '265px'
     widget.style.color = '#0f172a'
     widget.style.userSelect = 'none'
 
+    const intervalVal = payload.settings.checkpointIntervalKm ?? 10
+    const speedVal = payload.settings.targetSpeedKmH ?? 25
+    const departureVal = payload.settings.departureTime
+
     widget.innerHTML = `
-      <div id="velometeo-drag-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: grab;">
+      <div id="velometeo-drag-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; cursor: grab;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <div style="width: 22px; height: 22px; background: #2563eb; color: white; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">
             🚴
           </div>
           <span style="font-weight: 800; font-size: 13px; letter-spacing: -0.2px;">VeloMétéo</span>
+          <span id="velometeo-loading-badge" style="display: none; font-size: 10px; color: #2563eb; font-weight: 700; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">Calcul...</span>
         </div>
         <button id="velometeo-toggle-btn" style="background: #f1f5f9; border: none; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; color: #475569;">
           Masquer
         </button>
       </div>
 
-      <div style="font-size: 11px; margin-bottom: 6px; color: #334155;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-          <span>Départ : <strong>${new Date(payload.settings.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></span>
-          <span>Vitesse : <strong>${payload.settings.targetSpeedKmH} km/h</strong></span>
-        </div>
-        <div style="font-weight: 600; color: #0f172a;">${payload.summary.dominantWindLabel}</div>
-      </div>
+      <div id="velometeo-widget-body">
+        <div style="margin-bottom: 8px;">
+          <div id="velometeo-dominant-wind" style="font-weight: 700; font-size: 12px; color: #0f172a; margin-bottom: 2px;">
+            ${payload.summary.dominantWindLabel}
+          </div>
+          <div id="velometeo-wind-stats" style="font-size: 10px; color: #64748b; margin-bottom: 5px;">
+            Vent moy. ${payload.summary.avgWindSpeedKmH} km/h • Rafales ${payload.summary.maxGustKmH} km/h
+          </div>
 
-      <div style="margin-bottom: 6px;">
-        <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600; margin-bottom: 3px;">
-          <span style="color: #ef4444;">Face: ${payload.summary.headwindPercent}%</span>
-          <span style="color: #eab308;">Côté: ${payload.summary.crosswindPercent}%</span>
-          <span style="color: #10b981;">Dos: ${payload.summary.tailwindPercent}%</span>
+          <!-- Jauge vent relatif -->
+          <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; margin-bottom: 2px;">
+            <span id="velometeo-val-head" style="color: #ef4444;">Face ${payload.summary.headwindPercent}%</span>
+            <span id="velometeo-val-cross" style="color: #eab308;">Côté ${payload.summary.crosswindPercent}%</span>
+            <span id="velometeo-val-tail" style="color: #10b981;">Dos ${payload.summary.tailwindPercent}%</span>
+          </div>
+          <div style="height: 5px; width: 100%; background: #e2e8f0; border-radius: 9999px; overflow: hidden; display: flex;">
+            <div id="velometeo-bar-head" style="width: ${payload.summary.headwindPercent}%; background: #ef4444; transition: width 0.3s ease;"></div>
+            <div id="velometeo-bar-cross" style="width: ${payload.summary.crosswindPercent}%; background: #eab308; transition: width 0.3s ease;"></div>
+            <div id="velometeo-bar-tail" style="width: ${payload.summary.tailwindPercent}%; background: #10b981; transition: width 0.3s ease;"></div>
+          </div>
         </div>
-        <div style="height: 5px; width: 100%; background: #e2e8f0; border-radius: 9999px; overflow: hidden; display: flex;">
-          <div style="width: ${payload.summary.headwindPercent}%; background: #ef4444;"></div>
-          <div style="width: ${payload.summary.crosswindPercent}%; background: #eab308;"></div>
-          <div style="width: ${payload.summary.tailwindPercent}%; background: #10b981;"></div>
-        </div>
-      </div>
 
-      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #64748b; border-top: 1px solid #f1f5f9; padding-top: 5px;">
-        <span>Vent moy. <strong>${payload.summary.avgWindSpeedKmH} km/h</strong></span>
-        <span>Rafales <strong>${payload.summary.maxGustKmH} km/h</strong></span>
+        <!-- Section Réglages Sliders -->
+        <div style="border-top: 1px solid #f1f5f9; padding-top: 8px; display: flex; flex-direction: column; gap: 7px;">
+          <!-- Slider Espacement Météo -->
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 2px;">
+              <span style="font-weight: 600; color: #334155;">📍 Espacement balises</span>
+              <span id="velometeo-val-interval" style="font-weight: 700; color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 1px 5px; border-radius: 4px; font-size: 10px;">${intervalVal} km</span>
+            </div>
+            <input type="range" id="velometeo-slider-interval" min="3" max="30" step="1" value="${intervalVal}" style="width: 100%; accent-color: #7c3aed; cursor: pointer; height: 4px; margin: 3px 0; display: block;">
+            <div style="display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8;">
+              <span>3 km</span>
+              <span>10 km</span>
+              <span>30 km</span>
+            </div>
+          </div>
+
+          <!-- Slider Vitesse moyenne cible -->
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 2px;">
+              <span style="font-weight: 600; color: #334155;">⚡ Vitesse moyenne</span>
+              <span id="velometeo-val-speed" style="font-weight: 700; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 5px; border-radius: 4px; font-size: 10px;">${speedVal} km/h</span>
+            </div>
+            <input type="range" id="velometeo-slider-speed" min="15" max="42" step="1" value="${speedVal}" style="width: 100%; accent-color: #059669; cursor: pointer; height: 4px; margin: 3px 0; display: block;">
+            <div style="display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8;">
+              <span>15 km/h</span>
+              <span>25 km/h</span>
+              <span>42 km/h</span>
+            </div>
+          </div>
+
+          <!-- Heure de départ -->
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: #334155; margin-bottom: 2px;">
+              🕐 Date & heure de départ
+            </div>
+            <input type="datetime-local" id="velometeo-input-departure" value="${departureVal}" style="width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font-family: inherit; box-sizing: border-box;">
+          </div>
+        </div>
       </div>
     `
-
     mapContainer.appendChild(widget)
 
-    // Bouton pour afficher/masquer les marqueurs
+    function updateWidgetContent(summary: InjectedWeatherPayload['summary'], settings: InjectedWeatherPayload['settings']) {
+      if (!widget) return
+
+      const domWind = widget.querySelector('#velometeo-dominant-wind')
+      if (domWind) domWind.textContent = summary.dominantWindLabel
+
+      const windStats = widget.querySelector('#velometeo-wind-stats')
+      if (windStats) windStats.textContent = `Vent moy. ${summary.avgWindSpeedKmH} km/h • Rafales ${summary.maxGustKmH} km/h`
+
+      const barHead = widget.querySelector('#velometeo-bar-head') as HTMLElement
+      if (barHead) barHead.style.width = `${summary.headwindPercent}%`
+      const valHead = widget.querySelector('#velometeo-val-head')
+      if (valHead) valHead.textContent = `Face ${summary.headwindPercent}%`
+
+      const barCross = widget.querySelector('#velometeo-bar-cross') as HTMLElement
+      if (barCross) barCross.style.width = `${summary.crosswindPercent}%`
+      const valCross = widget.querySelector('#velometeo-val-cross')
+      if (valCross) valCross.textContent = `Côté ${summary.crosswindPercent}%`
+
+      const barTail = widget.querySelector('#velometeo-bar-tail') as HTMLElement
+      if (barTail) barTail.style.width = `${summary.tailwindPercent}%`
+      const valTail = widget.querySelector('#velometeo-val-tail')
+      if (valTail) valTail.textContent = `Dos ${summary.tailwindPercent}%`
+
+      if (settings.checkpointIntervalKm) {
+        const valInterval = widget.querySelector('#velometeo-val-interval')
+        if (valInterval) valInterval.textContent = `${settings.checkpointIntervalKm} km`
+      }
+
+      if (settings.targetSpeedKmH) {
+        const valSpeed = widget.querySelector('#velometeo-val-speed')
+        if (valSpeed) valSpeed.textContent = `${settings.targetSpeedKmH} km/h`
+      }
+    }
+
+    // Gestion de l'actualisation globale des données (appelée lors des changements de sliders)
+    // @ts-expect-error global hook
+    window.__velometeoRefreshMarkers = (newPayload: InjectedWeatherPayload) => {
+      renderMarkers(newPayload.checkpoints)
+      updateWidgetContent(newPayload.summary, newPayload.settings)
+      const badge = widget.querySelector('#velometeo-loading-badge') as HTMLElement
+      if (badge) badge.style.display = 'none'
+    }
+
+    // Écouteurs sur les sliders avec debounce
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const triggerUpdate = (partial: { checkpointIntervalKm?: number; targetSpeedKmH?: number; departureTime?: string }) => {
+      const badge = widget.querySelector('#velometeo-loading-badge') as HTMLElement
+      if (badge) badge.style.display = 'inline'
+
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        // @ts-expect-error global hook
+        if (typeof window.__velometeoOnSettingsChange === 'function') {
+          // @ts-expect-error global hook
+          window.__velometeoOnSettingsChange(partial)
+        }
+      }, 220)
+    }
+
+    const sliderInterval = widget.querySelector('#velometeo-slider-interval') as HTMLInputElement
+    sliderInterval?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value)
+      const valLabel = widget.querySelector('#velometeo-val-interval')
+      if (valLabel) valLabel.textContent = `${val} km`
+      triggerUpdate({ checkpointIntervalKm: val })
+    })
+
+    const sliderSpeed = widget.querySelector('#velometeo-slider-speed') as HTMLInputElement
+    sliderSpeed?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value)
+      const valLabel = widget.querySelector('#velometeo-val-speed')
+      if (valLabel) valLabel.textContent = `${val} km/h`
+      triggerUpdate({ targetSpeedKmH: val })
+    })
+
+    const inputDeparture = widget.querySelector('#velometeo-input-departure') as HTMLInputElement
+    inputDeparture?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLInputElement).value
+      triggerUpdate({ departureTime: val })
+    })
+
+    // Bouton pour afficher/masquer les marqueurs et le contenu du widget
     const toggleBtn = widget.querySelector('#velometeo-toggle-btn') as HTMLButtonElement
     let isVisible = true
     toggleBtn?.addEventListener('click', () => {
       isVisible = !isVisible
       overlay.style.display = isVisible ? 'block' : 'none'
+      const body = widget.querySelector('#velometeo-widget-body') as HTMLElement
+      if (body) body.style.display = isVisible ? 'block' : 'none'
       toggleBtn.textContent = isVisible ? 'Masquer' : 'Afficher'
     })
 
@@ -435,7 +563,7 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
     let initialTop = 0
 
     const onMouseDown = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('button')) return
+      if ((e.target as HTMLElement).closest('button, input')) return
       isDragging = true
       dragHeader.style.cursor = 'grabbing'
       startX = e.clientX

@@ -70,7 +70,26 @@ Les fichiers prêts pour le navigateur sont générés dans le dossier `dist/`.
 
 ---
 
+## ⚖️ Mentions Légales, Confidentialité & Marques
+
+### Non-affiliation Komoot
+**Komoot** est une marque déposée de **Komoot GmbH**. 
+VeloMétéo est un projet open-source indépendant développé par la communauté. Il n'est en aucun cas affilié, sponsorisé, approuvé ou associé à Komoot GmbH. Le nom « Komoot » n'est utilisé ici qu'à titre descriptif de compatibilité technique.
+
+### Données & Attributions tierces
+- 🌦️ **Données météo** : Fournies par l'excellente API open-source [Open-Meteo.com](https://open-meteo.com/) sous licence [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+- 🗺️ **Cartographie** : Tuiles et données cartographiques © les contributeurs d'[OpenStreetMap](https://www.openstreetmap.org/copyright) sous licence [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
+
+### ⚠️ Avertissement Météo & Sécurité
+Les prévisions météorologiques, estimations d'allure et calculs d'angle de vent sont fournis **à titre purement informatif et estimatif**. Les conditions réelles sur le terrain (microclimats, rafales soudaines, orages, état des routes) peuvent varier significativement. Consultez toujours les bulletins de vigilance officiels avant votre sortie vélo. Les auteurs et contributeurs déclinent toute responsabilité en cas d'accident, incident ou dommage lié à l'utilisation de ces données.
+
+### 🔒 Politique de Confidentialité
+VeloMétéo fonctionne selon le principe du *Privacy by Design* : zéro serveur VeloMétéo, zéro traqueur, zéro profilage. Pour consulter le détail du traitement des données et des permissions du navigateur, référez-vous à notre politique complète :
+👉 **[Consulter PRIVACY.md](PRIVACY.md)**
+
+---
+
 ## 📄 Licence
 
-MIT
+Ce projet est distribué sous licence libre [MIT](LICENSE).
 
