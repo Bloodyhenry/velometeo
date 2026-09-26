@@ -53,10 +53,6 @@ export function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [detectedTab, setDetectedTab] = useState<DetectedTabInfo | null>(null)
-  const [isImportingTab, setIsImportingTab] = useState<boolean>(false)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [isInjectingMap, setIsInjectingMap] = useState<boolean>(false)
-  const [injectionMessage, setInjectionMessage] = useState<string | null>(null)
 
   // Calcule la physique et interroge Open-Meteo pour la trace courante
   const processRouteAndWeather = useCallback(
@@ -112,15 +108,10 @@ export function App() {
       setDetectedTab(tabInfo)
       // Auto-import immédiat si un tour Komoot est détecté sur l'onglet actif
       if (tabInfo && tabInfo.tourId) {
-        setIsImportingTab(true)
-        setImportError(null)
         const res = await extractFromActiveTab(tabInfo)
         if (res.success && res.gpxContent) {
           handleGpxLoaded(res.gpxContent, res.tourName || tabInfo.title || 'Parcours Komoot')
-        } else if (res.error) {
-          setImportError(res.error)
         }
-        setIsImportingTab(false)
       }
     } catch (e) {
       console.warn("Erreur lors de l'analyse de l'onglet actif :", e)
@@ -134,48 +125,19 @@ export function App() {
     scanActiveTab()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleImportTab = async () => {
-    if (!detectedTab) return
-    setIsImportingTab(true)
-    setImportError(null)
-    try {
-      const res = await extractFromActiveTab(detectedTab)
-      if (res.success && res.gpxContent) {
-        handleGpxLoaded(res.gpxContent, res.tourName || detectedTab.title || 'Parcours Komoot')
-      } else {
-        setImportError(res.error || "Impossible d'extraire le parcours.")
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
-      setImportError(msg)
-    } finally {
-      setIsImportingTab(false)
-    }
-  }
-
-  const handleInjectOnKomootMap = async () => {
-    if (!detectedTab || checkpoints.length === 0 || !weatherSummary) return
-    setIsInjectingMap(true)
-    setInjectionMessage(null)
-    try {
-      const res = await injectWeatherIntoKomootTab(
+  // Projection automatique sur la carte Komoot dès que les calculs météo sont prêts
+  useEffect(() => {
+    if (detectedTab?.tabId && checkpoints.length > 0 && weatherSummary) {
+      injectWeatherIntoKomootTab(
         detectedTab.tabId,
         checkpoints,
         settings,
         weatherSummary
-      )
-      if (res.success) {
-        setInjectionMessage(res.message || 'Balises météo affichées sur la carte Komoot !')
-      } else {
-        setInjectionMessage(`Erreur : ${res.message || 'Échec de la projection'}`)
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
-      setInjectionMessage(`Erreur : ${msg}`)
-    } finally {
-      setIsInjectingMap(false)
+      ).catch((err) => {
+        console.warn('Erreur projection automatique Komoot :', err)
+      })
     }
-  }
+  }, [checkpoints, weatherSummary, detectedTab?.tabId, settings])
 
   // Rafraîchissement manuel ou modification de paramètres
   const handleSettingsChange = (newSettings: RideSettings) => {
@@ -254,21 +216,25 @@ export function App() {
           </div>
         )}
 
-        {/* 1. Zone d'upload & Fichier GPX */}
-        <FileUpload
-          onGpxLoaded={handleGpxLoaded}
-          currentFileName={fileName}
-          isLoading={isLoading}
-          detectedTab={detectedTab}
-          onImportTab={handleImportTab}
-          isImportingTab={isImportingTab}
-          importError={importError}
-          onRescanTab={scanActiveTab}
-          onInjectOnKomootMap={handleInjectOnKomootMap}
-          isInjectingMap={isInjectingMap}
-          injectionMessage={injectionMessage}
-          canInjectMap={checkpoints.length > 0 && weatherSummary !== null}
-        />
+        {/* En-tête compact si un tour Komoot est détecté, ou upload classique sinon */}
+        {detectedTab ? (
+          <div className="bg-white border border-slate-200/90 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="text-xs font-bold text-slate-800 truncate">
+                {fileName || detectedTab.title}
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
+              Synchronisé sur la carte
+            </span>
+          </div>
+        ) : (
+          <FileUpload
+            onGpxLoaded={handleGpxLoaded}
+            isLoading={isLoading}
+          />
+        )}
 
         {/* 2. Barre de commandes (heure, vitesse, dénivelé) */}
         <Controls

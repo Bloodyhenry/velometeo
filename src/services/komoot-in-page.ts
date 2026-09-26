@@ -215,33 +215,37 @@ export async function injectWeatherOnKomootMap(payload: InjectedWeatherPayload):
         <div style="
           display: flex;
           align-items: center;
-          gap: 4px;
-          background: rgba(15, 23, 42, 0.9);
-          backdrop-filter: blur(4px);
+          gap: 5px;
+          background: rgba(15, 23, 42, 0.94);
+          backdrop-filter: blur(6px);
           color: white;
-          padding: 3px 6px;
+          padding: 3px 8px;
           border-radius: 9999px;
           border: 2px solid ${cp.windCategoryColor};
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-          font-family: system-ui, sans-serif;
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+          font-family: system-ui, -apple-system, sans-serif;
           font-size: 11px;
           font-weight: 700;
           white-space: nowrap;
         ">
+          <span style="font-size: 10px; font-weight: 600; opacity: 0.85;">${cp.estimatedTimeStr}</span>
+          <span style="font-size: 12px; line-height: 1;">${cp.weatherIcon}</span>
           <div style="
-            width: 18px;
-            height: 18px;
+            width: 17px;
+            height: 17px;
             border-radius: 9999px;
             background: ${cp.windCategoryColor};
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
+            font-size: 10px;
+            line-height: 1;
+            color: white;
           ">
             <span style="transform: rotate(${cp.windDirection + 180}deg); display: inline-block;">➔</span>
           </div>
           <span>${Math.round(cp.temperature)}°</span>
-          <span style="font-size: 10px; opacity: 0.9;">${cp.windSpeed}k</span>
+          <span style="font-size: 10px; opacity: 0.85;">${cp.windSpeed}k</span>
         </div>
       `
 
