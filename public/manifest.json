@@ -37,5 +37,20 @@
     "*://*.komoot.nl/*",
     "https://api.open-meteo.com/*",
     "https://*.tile.openstreetmap.org/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.komoot.com/*",
+        "*://*.komoot.de/*",
+        "*://*.komoot.fr/*",
+        "*://*.komoot.it/*",
+        "*://*.komoot.es/*",
+        "*://*.komoot.nl/*"
+      ],
+      "js": ["content.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
   ]
 }

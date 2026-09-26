@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --target=es2022",
     "check-logic": "tsx src/services/check-logic.ts",
     "lint": "oxlint",
     "preview": "vite preview"
