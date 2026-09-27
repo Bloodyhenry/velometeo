@@ -14,6 +14,7 @@ import {
   injectWeatherIntoKomootTab,
 } from './services/page-detector'
 import type { DetectedTabInfo } from './services/page-detector'
+import { LanguageProvider, useI18n } from './services/i18n'
 import { FileUpload } from './components/FileUpload'
 import { Controls } from './components/Controls'
 import { RideSummary } from './components/RideSummary'
@@ -30,7 +31,8 @@ function getDefaultDepartureTime(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export function App() {
+function AppContent() {
+  const { t, lang, setLang } = useI18n()
   const [route, setRoute] = useState<RouteData | null>(() => {
     try {
       return parseGpxString(SAMPLE_GPX_CONTENT)
@@ -38,9 +40,7 @@ export function App() {
       return null
     }
   })
-  const [fileName, setFileName] = useState<string>(
-    'Boucle Démo - Col de Porte & Chartreuse (65 km)'
-  )
+  const [fileName, setFileName] = useState<string>(() => t('demoFileName'))
   const [settings, setSettings] = useState<RideSettings>({
     departureTime: getDefaultDepartureTime(),
     targetSpeedKmH: 25,
@@ -67,23 +67,42 @@ export function App() {
         const baseCheckpoints = generateCheckpoints(currentRoute, currentSettings, timings)
 
         // 3. Appel de l'API météo Open-Meteo
-        const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints)
+        const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints, lang)
 
         setCheckpoints(withWeather)
 
         // 4. Synthèse globale
-        const summary = computeRideWeatherSummary(withWeather)
+        const summary = computeRideWeatherSummary(withWeather, lang)
         setWeatherSummary(summary)
       } catch (err: unknown) {
         console.error('Erreur traitement météo :', err)
-        const msg = err instanceof Error ? err.message : 'Erreur inattendue'
+        const msg = err instanceof Error ? err.message : t('unexpectedError')
         setErrorMessage(msg)
       } finally {
         setIsLoading(false)
       }
     },
-    []
+    [lang, t]
   )
+
+  // ponytail: Synchronise le titre de démo et les synthèses dynamiques au changement de langue
+  useEffect(() => {
+    setFileName((prev) => {
+      if (
+        prev === 'Boucle Démo - Col de Porte & Chartreuse (65 km)' ||
+        prev === 'Demo Loop - Col de Porte & Chartreuse (65 km)' ||
+        prev === 'Boucle Démo - Col de Porte (65 km)' ||
+        prev === 'Demo Loop - Col de Porte (65 km)'
+      ) {
+        return t('demoFileName')
+      }
+      return prev
+    })
+
+    if (checkpoints.length > 0) {
+      setWeatherSummary(computeRideWeatherSummary(checkpoints, lang))
+    }
+  }, [lang, t]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Chargement d'une trace GPX (upload ou démo)
   const handleGpxLoaded = useCallback(
@@ -95,11 +114,11 @@ export function App() {
         setFileName(name)
         processRouteAndWeather(parsed, settings)
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur de lecture du fichier GPX'
+        const msg = err instanceof Error ? err.message : t('gpxReadError')
         setErrorMessage(msg)
       }
     },
-    [processRouteAndWeather, settings]
+    [processRouteAndWeather, settings, t]
   )
 
   const scanActiveTab = useCallback(async () => {
@@ -110,13 +129,16 @@ export function App() {
       if (tabInfo && tabInfo.tourId) {
         const res = await extractFromActiveTab(tabInfo)
         if (res.success && res.gpxContent) {
-          handleGpxLoaded(res.gpxContent, res.tourName || tabInfo.title || 'Parcours Komoot')
+          handleGpxLoaded(
+            res.gpxContent,
+            res.tourName || tabInfo.title || (lang === 'en' ? 'Komoot tour' : 'Parcours Komoot')
+          )
         }
       }
     } catch (e) {
       console.warn("Erreur lors de l'analyse de l'onglet actif :", e)
     }
-  }, [handleGpxLoaded])
+  }, [handleGpxLoaded, lang])
 
   useEffect(() => {
     if (route) {
@@ -132,12 +154,13 @@ export function App() {
         detectedTab.tabId,
         checkpoints,
         settings,
-        weatherSummary
+        weatherSummary,
+        lang
       ).catch((err) => {
         console.warn('Erreur projection automatique Komoot :', err)
       })
     }
-  }, [checkpoints, weatherSummary, detectedTab?.tabId, settings])
+  }, [checkpoints, weatherSummary, detectedTab?.tabId, settings, lang])
 
   // Rafraîchissement manuel ou modification de paramètres
   const handleSettingsChange = (newSettings: RideSettings) => {
@@ -170,15 +193,44 @@ export function App() {
             </div>
             <div>
               <div className="font-extrabold text-base tracking-tight text-slate-900 flex items-center gap-1.5">
-                VeloMétéo <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">GPX Weather</span>
+                {t('appName')}{' '}
+                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                  {t('appBadge')}
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Prévisions météo & vent relatif synchronisés sur votre itinéraire cycliste
-              </p>
+              <p className="text-[11px] text-slate-500">{t('appSubtitle')}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-2.5 text-xs text-slate-500">
+            {/* Sélecteur de langue multilingue FR / EN */}
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setLang('fr')}
+                className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  lang === 'fr'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+                title="Passer en français"
+              >
+                FR
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang('en')}
+                className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  lang === 'en'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+                title="Switch to English"
+              >
+                EN
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => {
@@ -190,11 +242,11 @@ export function App() {
                   window.open(window.location.href, '_blank')
                 }
               }}
-              title="Ouvrir dans un grand onglet"
+              title={t('fullScreenTitle')}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Plein écran</span>
+              <span className="hidden sm:inline">{t('fullScreen')}</span>
             </button>
             <span className="hidden md:flex items-center gap-1">
               <Compass className="w-3.5 h-3.5 text-blue-500" /> Open-Meteo
@@ -210,7 +262,7 @@ export function App() {
           <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-semibold text-sm">Une erreur est survenue</h3>
+              <h3 className="font-semibold text-sm">{t('errorOccurred')}</h3>
               <p className="text-xs mt-0.5">{errorMessage}</p>
             </div>
           </div>
@@ -228,26 +280,27 @@ export function App() {
                   {fileName || detectedTab.title}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {detectedTab.tourId && detectedTab.tourId !== 'builder' && detectedTab.tourId !== 'activity'
-                    ? `${detectedTab.platform === 'strava' ? 'Parcours ou activité Strava' : 'Parcours Komoot'} synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.`
+                  {detectedTab.tourId &&
+                  detectedTab.tourId !== 'builder' &&
+                  detectedTab.tourId !== 'activity'
+                    ? detectedTab.platform === 'strava'
+                      ? t('syncDescStrava')
+                      : t('syncDescKomoot')
                     : detectedTab.platform === 'strava'
-                    ? "Page Strava détectée — Ouvrez ou tracez un itinéraire / une activité pour projeter automatiquement les balises météo et le calcul du vent."
-                    : "Page Komoot détectée — Ouvrez un parcours pour lancer la météo."}
+                    ? t('detectedStravaPage')
+                    : t('detectedKomootPage')}
                 </p>
               </div>
             </div>
             {route && checkpoints.length > 0 && (
               <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full shrink-0">
-                Actif sur la carte
+                {t('activeOnMap')}
               </span>
             )}
           </div>
         ) : (
           <>
-            <FileUpload
-              onGpxLoaded={handleGpxLoaded}
-              isLoading={isLoading}
-            />
+            <FileUpload onGpxLoaded={handleGpxLoaded} isLoading={isLoading} />
             {/* Paramètres de simulation en mode autonome GPX */}
             <Controls
               settings={settings}
@@ -301,7 +354,7 @@ export function App() {
       {/* Footer d'attributions légales et mentions de responsabilité */}
       <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-slate-200/80 text-center text-xs text-slate-400 space-y-1.5">
         <p>
-          Données météo fournies par{' '}
+          {t('weatherBy')}{' '}
           <a
             href="https://open-meteo.com/"
             target="_blank"
@@ -309,8 +362,8 @@ export function App() {
             className="text-slate-500 hover:text-blue-600 underline underline-offset-2 transition-colors"
           >
             Open-Meteo (CC BY 4.0)
-          </a>
-          {' '}• Cartographie ©{' '}
+          </a>{' '}
+          • {t('mappingBy')}{' '}
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"
@@ -320,11 +373,17 @@ export function App() {
             OpenStreetMap
           </a>
         </p>
-        <p>
-          VeloMétéo est un projet libre (MIT) et indépendant, non affilié à Komoot GmbH. Données fournies à titre indicatif.
-        </p>
+        <p>{t('footerNotice')}</p>
       </footer>
     </div>
+  )
+}
+
+export function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   )
 }
 

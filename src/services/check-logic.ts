@@ -192,5 +192,54 @@ assert(Math.abs(decoded[1].lat - 40.7) < 0.001 && Math.abs(decoded[1].lng - -120
 assert(Math.abs(decoded[2].lat - 43.252) < 0.001 && Math.abs(decoded[2].lng - -126.453) < 0.001, 'Point 3 mismatch')
 console.log('✓ Strava URL parser (routes, activities, builder, maps) and polyline decoder OK')
 
+// 10. Check Multilingual (i18n) Support & Key Parity
+import {
+  translations,
+  t,
+  getWindCategoryLabel,
+  getDominantWindLabel,
+  getWmoWeatherDetails,
+} from './i18n'
+
+// Verify exact 1:1 key parity between French and English dictionaries
+const frKeys = Object.keys(translations.fr).sort()
+const enKeys = Object.keys(translations.en).sort()
+assert.deepStrictEqual(
+  frKeys,
+  enKeys,
+  'Mismatch between French and English translation keys! Missing keys detected.'
+)
+
+// Check interpolation
+const interpolatedFr = t('everyXKm', { km: 15 }, 'fr')
+assert.strictEqual(interpolatedFr, 'Tous les 15 km', `Interpolation FR failed: ${interpolatedFr}`)
+const interpolatedEn = t('everyXKm', { km: 15 }, 'en')
+assert.strictEqual(interpolatedEn, 'Every 15 km', `Interpolation EN failed: ${interpolatedEn}`)
+
+// Check wind category labels in both languages
+assert.strictEqual(getWindCategoryLabel('headwind', 'fr'), 'Vent de face')
+assert.strictEqual(getWindCategoryLabel('headwind', 'en'), 'Headwind')
+assert.strictEqual(getWindCategoryLabel('tailwind', 'fr'), 'Vent dans le dos')
+assert.strictEqual(getWindCategoryLabel('tailwind', 'en'), 'Tailwind')
+
+// Check dominant wind labels in both languages
+assert.strictEqual(getDominantWindLabel(60, 20, 20, 'fr'), 'Principalement de face 🔴')
+assert.strictEqual(getDominantWindLabel(60, 20, 20, 'en'), 'Mostly headwind 🔴')
+assert.strictEqual(getDominantWindLabel(20, 60, 20, 'fr'), 'Principalement dans le dos 🚀')
+assert.strictEqual(getDominantWindLabel(20, 60, 20, 'en'), 'Mostly tailwind 🚀')
+
+// Check WMO weather details in both languages
+const sunnyFr = getWmoWeatherDetails(0, 'fr')
+assert.strictEqual(sunnyFr.label, 'Ensoleillé / Ciel dégagé')
+const sunnyEn = getWmoWeatherDetails(0, 'en')
+assert.strictEqual(sunnyEn.label, 'Sunny / Clear sky')
+
+const rainFr = getWmoWeatherDetails(61, 'fr')
+assert.strictEqual(rainFr.label, 'Pluie')
+const rainEn = getWmoWeatherDetails(61, 'en')
+assert.strictEqual(rainEn.label, 'Rain')
+
+console.log('✓ Multilingual i18n dictionary key parity, interpolation, and localized wind/weather OK')
+
 console.log('All core logic checks passed successfully! 🎉')
 

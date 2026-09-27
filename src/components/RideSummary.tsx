@@ -9,6 +9,7 @@ import {
   Flag,
 } from 'lucide-react'
 import type { Checkpoint, RouteData, SegmentWeatherSummary } from '../types'
+import { useI18n } from '../services/i18n'
 
 interface RideSummaryProps {
   route: RouteData
@@ -24,6 +25,7 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
   departureDate,
   arrivalDate,
 }) => {
+  const { t } = useI18n()
   const durationMs = arrivalDate.getTime() - departureDate.getTime()
   const totalMinutes = Math.round(durationMs / 60000)
   const hours = Math.floor(totalMinutes / 60)
@@ -38,7 +40,7 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
         <div>
           <h1 className="text-lg font-bold text-slate-900">{route.name}</h1>
           <p className="text-xs text-slate-500">
-            Départ prévu à {formatTime(departureDate)} • Arrivée estimée à {formatTime(arrivalDate)}
+            {t('departureAt')} {formatTime(departureDate)} • {t('arrivalAt')} {formatTime(arrivalDate)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -54,7 +56,7 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <RouteIcon className="w-3.5 h-3.5 text-blue-500" />
-            <span>Distance</span>
+            <span>{t('distance')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             {route.totalDistanceKm.toFixed(1)} <span className="text-xs font-normal">km</span>
@@ -65,7 +67,7 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
-            <span>Dénivelé +</span>
+            <span>{t('elevationGain')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             +{route.elevationGainM} <span className="text-xs font-normal">m</span>
@@ -76,7 +78,7 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <Clock className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Durée</span>
+            <span>{t('duration')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             {hours}h{mins < 10 ? `0${mins}` : mins}
@@ -87,38 +89,38 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <Wind className="w-3.5 h-3.5 text-cyan-500" />
-            <span>Vent moy.</span>
+            <span>{t('avgWind')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             {weatherSummary.avgWindSpeedKmH}{' '}
             <span className="text-xs font-normal">km/h</span>
           </div>
-          <p className="text-[10px] text-slate-400">Rafales max : {weatherSummary.maxGustKmH} km/h</p>
+          <p className="text-[10px] text-slate-400">{t('maxGusts', { val: weatherSummary.maxGustKmH })}</p>
         </div>
 
         {/* Températures */}
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <Thermometer className="w-3.5 h-3.5 text-rose-500" />
-            <span>Températures</span>
+            <span>{t('temperatures')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             {weatherSummary.minTempC}° / {weatherSummary.maxTempC}°
           </div>
-          <p className="text-[10px] text-slate-400">Min / Max en route</p>
+          <p className="text-[10px] text-slate-400">{t('minMaxRoute')}</p>
         </div>
 
         {/* Risque de pluie */}
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
             <CloudRain className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Risque pluie</span>
+            <span>{t('rainRisk')}</span>
           </div>
           <div className="text-lg font-bold text-slate-800">
             {weatherSummary.maxPrecipitationProb} <span className="text-xs font-normal">%</span>
           </div>
           <p className="text-[10px] text-slate-400">
-            {weatherSummary.maxPrecipitationProb > 40 ? 'Prévoyez le k-way 🌧️' : 'Temps sec attendu ✨'}
+            {weatherSummary.maxPrecipitationProb > 40 ? t('rainAlertPackJacket') : t('rainAlertDry')}
           </p>
         </div>
       </div>
@@ -127,12 +129,12 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
       <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-lg border border-slate-100">
         <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
           <span className="flex items-center gap-1">
-            <Flag className="w-3.5 h-3.5 text-slate-500" /> Répartition du vent sur le trajet :
+            <Flag className="w-3.5 h-3.5 text-slate-500" /> {t('windDistribution')}
           </span>
           <div className="flex items-center gap-3 text-[11px]">
-            <span className="text-rose-600 font-semibold">Face : {weatherSummary.headwindPercent}%</span>
-            <span className="text-amber-600 font-semibold">Travers : {weatherSummary.crosswindPercent}%</span>
-            <span className="text-emerald-600 font-semibold">Dos : {weatherSummary.tailwindPercent}%</span>
+            <span className="text-rose-600 font-semibold">{t('headwindPct', { val: weatherSummary.headwindPercent })}</span>
+            <span className="text-amber-600 font-semibold">{t('crosswindPct', { val: weatherSummary.crosswindPercent })}</span>
+            <span className="text-emerald-600 font-semibold">{t('tailwindPct', { val: weatherSummary.tailwindPercent })}</span>
           </div>
         </div>
 
@@ -141,17 +143,17 @@ export const RideSummary: React.FC<RideSummaryProps> = ({
           <div
             style={{ width: `${weatherSummary.headwindPercent}%` }}
             className="bg-rose-500 transition-all duration-500"
-            title={`Vent de face : ${weatherSummary.headwindPercent}%`}
+            title={t('headwindPct', { val: weatherSummary.headwindPercent })}
           />
           <div
             style={{ width: `${weatherSummary.crosswindPercent}%` }}
             className="bg-amber-400 transition-all duration-500"
-            title={`Vent de travers : ${weatherSummary.crosswindPercent}%`}
+            title={t('crosswindPct', { val: weatherSummary.crosswindPercent })}
           />
           <div
             style={{ width: `${weatherSummary.tailwindPercent}%` }}
             className="bg-emerald-500 transition-all duration-500"
-            title={`Vent de dos : ${weatherSummary.tailwindPercent}%`}
+            title={t('tailwindPct', { val: weatherSummary.tailwindPercent })}
           />
         </div>
       </div>

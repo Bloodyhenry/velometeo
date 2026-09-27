@@ -497,17 +497,25 @@ export async function injectWeatherIntoKomootTab(
   tabId: number,
   checkpoints: Checkpoint[],
   settings: RideSettings,
-  summary: SegmentWeatherSummary
+  summary: SegmentWeatherSummary,
+  lang: 'fr' | 'en' = 'fr'
 ): Promise<{ success: boolean; message?: string }> {
   // @ts-expect-error chrome extension API
   if (typeof chrome === 'undefined' || !chrome?.scripting?.executeScript) {
-    return { success: false, message: "L'API chrome.scripting n'est pas disponible." }
+    return {
+      success: false,
+      message:
+        lang === 'en'
+          ? 'The chrome.scripting API is not available.'
+          : "L'API chrome.scripting n'est pas disponible.",
+    }
   }
 
   const payload: InjectedWeatherPayload = {
+    lang,
     checkpoints: checkpoints.map((cp) => {
       const w = cp.weather
-      const wmo = w ? getWmoWeatherDetails(w.weatherCode) : { label: 'Météo', icon: '⛅' }
+      const wmo = w ? getWmoWeatherDetails(w.weatherCode, lang) : { label: 'Météo', icon: '⛅' }
       return {
         id: cp.id,
         lat: cp.lat,

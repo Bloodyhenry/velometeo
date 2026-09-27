@@ -1,0 +1,14 @@
+{
+  "appName": {
+    "message": "VeloMétéo - Weather & Wind for Cyclists",
+    "description": "Extension name"
+  },
+  "appDesc": {
+    "message": "Hour-by-hour weather forecast and relative wind calculation along your cycling routes (GPX files, Komoot and Strava compatible).",
+    "description": "Extension description"
+  },
+  "actionTitle": {
+    "message": "Open VeloMétéo",
+    "description": "Action button title in toolbar"
+  }
+}

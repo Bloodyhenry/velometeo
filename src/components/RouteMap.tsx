@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import type { Checkpoint, RouteData } from '../types'
 import { getWmoWeatherDetails } from '../services/weather'
+import { useI18n, getWindCategoryLabel } from '../services/i18n'
 
 interface RouteMapProps {
   route: RouteData
@@ -16,6 +17,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   selectedCheckpointId,
   onSelectCheckpoint,
 }) => {
+  const { t, lang } = useI18n()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
   const markersLayerRef = useRef<L.LayerGroup | null>(null)
@@ -77,7 +79,8 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     checkpoints.forEach((cp) => {
       const isSelected = cp.id === selectedCheckpointId
       const w = cp.weather
-      const wmo = w ? getWmoWeatherDetails(w.weatherCode) : null
+      const wmo = w ? getWmoWeatherDetails(w.weatherCode, lang) : null
+      const localizedWindLabel = w ? getWindCategoryLabel(w.windCategory, lang) : ''
 
       // Icône personnalisée avec flèche de vent orientée
       const color = w?.windCategoryColor || '#64748b'
@@ -129,7 +132,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       const popupContent = `
         <div class="p-1 space-y-1 font-sans text-xs">
           <div class="font-bold text-slate-900 border-b pb-1 flex justify-between items-center">
-            <span>Passage : ${timeStr}</span>
+            <span>${t('passingAt')} ${timeStr}</span>
             <span class="text-blue-600 font-semibold">${cp.distKm} km (${cp.elevationM} m)</span>
           </div>
           ${
@@ -139,23 +142,23 @@ export const RouteMap: React.FC<RouteMapProps> = ({
               <span class="text-xl">${wmo?.icon || '⛅'}</span>
               <div>
                 <div class="font-semibold text-slate-800">${wmo?.label || 'Météo'}</div>
-                <div class="text-[11px] text-slate-500">${w.temperature}°C (ressenti ${w.apparentTemperature}°C)</div>
+                <div class="text-[11px] text-slate-500">${w.temperature}°C (${t('feelsLike')} ${w.apparentTemperature}°C)</div>
               </div>
             </div>
             <div class="pt-1 border-t border-slate-100 space-y-0.5">
               <div class="flex items-center justify-between">
                 <span class="font-medium" style="color: ${w.windCategoryColor};">
-                  ${w.windCategoryLabel}
+                  ${localizedWindLabel}
                 </span>
                 <span class="font-bold text-slate-700">${w.windSpeed} km/h (rafales ${w.windGusts})</span>
               </div>
               <div class="flex items-center justify-between text-slate-500 text-[11px]">
-                <span>Précipitations :</span>
+                <span>${t('precipitation')}</span>
                 <span>${w.precipitationProb}% (${w.precipitationMm} mm)</span>
               </div>
             </div>
           `
-              : '<div class="text-slate-500 py-1">Chargement météo...</div>'
+              : `<div class="text-slate-500 py-1">${t('loadingWeather')}</div>`
           }
         </div>
       `
@@ -167,21 +170,21 @@ export const RouteMap: React.FC<RouteMapProps> = ({
 
       layer.addLayer(marker)
     })
-  }, [checkpoints, selectedCheckpointId, onSelectCheckpoint])
+  }, [checkpoints, selectedCheckpointId, onSelectCheckpoint, lang, t])
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[420px]">
       <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 font-medium">
-        <span>Carte du parcours & vecteurs de vent</span>
+        <span>{t('mapTitle')}</span>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Vent face
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> {t('mapHead')}
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Travers
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> {t('mapCross')}
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Dos
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> {t('mapTail')}
           </span>
         </div>
       </div>

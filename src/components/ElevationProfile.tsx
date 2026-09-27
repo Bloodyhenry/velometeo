@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import type { Checkpoint, GpxPoint } from '../types'
 import { getWmoWeatherDetails } from '../services/weather'
+import { useI18n } from '../services/i18n'
 
 interface ElevationProfileProps {
   points: GpxPoint[]
@@ -15,6 +16,7 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
   selectedCheckpointId,
   onSelectCheckpoint,
 }) => {
+  const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
@@ -77,9 +79,9 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-2">
       <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
-        <span className="font-semibold text-slate-800">Profil altimétrique & balises météo</span>
+        <span className="font-semibold text-slate-800">{t('profileTitle')}</span>
         <span className="text-[11px] text-slate-400">
-          Survolez la courbe pour explorer le relief
+          {t('profileSubtitle')}
         </span>
       </div>
 
@@ -252,13 +254,13 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
       {hoveredPoint && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg text-xs text-slate-700 border border-slate-200">
           <span>
-            Distance : <strong>{hoveredPoint.dist.toFixed(1)} km</strong>
+            {t('distance')} : <strong>{hoveredPoint.dist.toFixed(1)} km</strong>
           </span>
           <span>
-            Altitude : <strong>{hoveredPoint.ele} m</strong>
+            {t('elevation')} : <strong>{hoveredPoint.ele} m</strong>
           </span>
           <span>
-            Pente locale :{' '}
+            {t('grade')} :{' '}
             <strong className={hoveredPoint.slope > 0 ? 'text-amber-600' : 'text-emerald-600'}>
               {(hoveredPoint.slope * 100).toFixed(1)}%
             </strong>

@@ -1,6 +1,7 @@
 import React from 'react'
 import { Calendar, Gauge, Mountain, MapPin, RefreshCw } from 'lucide-react'
 import type { RideSettings } from '../types'
+import { useI18n } from '../services/i18n'
 
 interface ControlsProps {
   settings: RideSettings
@@ -15,6 +16,8 @@ export const Controls: React.FC<ControlsProps> = ({
   onRefresh,
   isLoading,
 }) => {
+  const { t } = useI18n()
+
   const handleChange = <K extends keyof RideSettings>(key: K, value: RideSettings[K]) => {
     onChange({
       ...settings,
@@ -25,14 +28,14 @@ export const Controls: React.FC<ControlsProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
       <h2 className="text-base font-semibold text-slate-800 mb-4 flex items-center justify-between">
-        <span>Paramètres de la sortie</span>
+        <span>{t('rideSettings')}</span>
         <button
           onClick={onRefresh}
           disabled={isLoading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 rounded-lg shadow-sm transition-colors cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          {isLoading ? 'Calcul météo...' : 'Calculer la météo'}
+          {isLoading ? t('calculating') : t('calcWeather')}
         </button>
       </h2>
 
@@ -41,7 +44,7 @@ export const Controls: React.FC<ControlsProps> = ({
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-blue-500" />
-            Date & Heure de départ
+            {t('departureTime')}
           </label>
           <input
             type="datetime-local"
@@ -49,7 +52,7 @@ export const Controls: React.FC<ControlsProps> = ({
             onChange={(e) => handleChange('departureTime', e.target.value)}
             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-slate-50/50"
           />
-          <p className="text-[11px] text-slate-400">Prévisions heure par heure</p>
+          <p className="text-[11px] text-slate-400">{t('hourlyForecast')}</p>
         </div>
 
         {/* 2. Vitesse moyenne globale */}
@@ -57,7 +60,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <Gauge className="w-4 h-4 text-emerald-500" />
-              Vitesse moyenne cible
+              {t('targetSpeed')}
             </label>
             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
               {settings.targetSpeedKmH} km/h
@@ -74,7 +77,7 @@ export const Controls: React.FC<ControlsProps> = ({
           />
           <div className="flex justify-between text-[10px] text-slate-400">
             <span>15 km/h</span>
-            <span>25 km/h (standard)</span>
+            <span>25 km/h ({t('speedStandard')})</span>
             <span>42 km/h</span>
           </div>
         </div>
@@ -84,7 +87,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <Mountain className="w-4 h-4 text-amber-500" />
-              Pondération relief
+              {t('elevationWeight')}
             </label>
             <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
               {Math.round(settings.elevationWeight * 100)}%
@@ -100,9 +103,9 @@ export const Controls: React.FC<ControlsProps> = ({
             className="w-full accent-amber-500 cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-slate-400">
-            <span>0% (Plat)</span>
-            <span>70% (Réaliste)</span>
-            <span>100% (Strict)</span>
+            <span>0% ({t('flat')})</span>
+            <span>70% ({t('realistic')})</span>
+            <span>100% ({t('strict')})</span>
           </div>
         </div>
 
@@ -111,10 +114,10 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-purple-500" />
-              Espacement météo
+              {t('weatherSpacing')}
             </label>
             <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
-              Tous les {settings.checkpointIntervalKm} km
+              {t('everyXKm', { km: settings.checkpointIntervalKm })}
             </span>
           </div>
           <input
@@ -127,9 +130,9 @@ export const Controls: React.FC<ControlsProps> = ({
             className="w-full accent-purple-600 cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-slate-400">
-            <span>5 km (dense)</span>
+            <span>5 km ({t('dense')})</span>
             <span>10 km</span>
-            <span>25 km (léger)</span>
+            <span>25 km ({t('sparse')})</span>
           </div>
         </div>
       </div>

@@ -1,11 +1,20 @@
 import type { Checkpoint, SegmentWeatherSummary, WeatherPoint, WindCategory } from '../types'
+import {
+  type Lang,
+  getWindCategoryLabel,
+  getDominantWindLabel,
+  getWmoWeatherDetails,
+} from './i18n'
+
+export { getWmoWeatherDetails, getDominantWindLabel }
 
 /**
  * Catégorisation de l'angle du vent relatif au cap du vélo.
  */
 export function classifyRelativeWind(
   windDirectionDeg: number,
-  cyclistBearingDeg: number
+  cyclistBearingDeg: number,
+  lang: Lang = 'fr'
 ): {
   relativeAngle: number
   category: WindCategory
@@ -18,43 +27,33 @@ export function classifyRelativeWind(
     diff = 360 - diff
   }
 
+  let category: WindCategory
+  let color: string
+
   // 0° = le vent vient exactement d'en face
   // 180° = le vent vient exactement de derrière
   if (diff <= 45) {
-    return {
-      relativeAngle: Math.round(diff),
-      category: 'headwind',
-      label: 'Vent de face',
-      color: '#ef4444', // Rouge
-    }
+    category = 'headwind'
+    color = '#ef4444' // Rouge
   } else if (diff <= 75) {
-    return {
-      relativeAngle: Math.round(diff),
-      category: 'cross_headwind',
-      label: '3/4 face',
-      color: '#f97316', // Orange
-    }
+    category = 'cross_headwind'
+    color = '#f97316' // Orange
   } else if (diff <= 105) {
-    return {
-      relativeAngle: Math.round(diff),
-      category: 'crosswind',
-      label: 'Vent de côté',
-      color: '#eab308', // Jaune
-    }
+    category = 'crosswind'
+    color = '#eab308' // Jaune
   } else if (diff <= 135) {
-    return {
-      relativeAngle: Math.round(diff),
-      category: 'cross_tailwind',
-      label: '3/4 dos',
-      color: '#84cc16', // Vert clair
-    }
+    category = 'cross_tailwind'
+    color = '#84cc16' // Vert clair
   } else {
-    return {
-      relativeAngle: Math.round(diff),
-      category: 'tailwind',
-      label: 'Vent dans le dos',
-      color: '#10b981', // Vert émeraude
-    }
+    category = 'tailwind'
+    color = '#10b981' // Vert émeraude
+  }
+
+  return {
+    relativeAngle: Math.round(diff),
+    category,
+    label: getWindCategoryLabel(category, lang),
+    color,
   }
 }
 
@@ -79,7 +78,8 @@ interface OpenMeteoHourlyResponse {
  * Gratuit, sans clé API, CORS ouvert.
  */
 export async function fetchWeatherForCheckpoints(
-  checkpoints: Checkpoint[]
+  checkpoints: Checkpoint[],
+  lang: Lang = 'fr'
 ): Promise<Checkpoint[]> {
   if (checkpoints.length === 0) return []
 
@@ -90,7 +90,11 @@ export async function fetchWeatherForCheckpoints(
 
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Erreur lors de la récupération météo : ${response.statusText}`)
+    throw new Error(
+      lang === 'en'
+        ? `Error fetching weather data: ${response.statusText}`
+        : `Erreur lors de la récupération météo : ${response.statusText}`
+    )
   }
 
   const rawData = await response.json()
@@ -130,7 +134,8 @@ export async function fetchWeatherForCheckpoints(
 
     const { relativeAngle, category, label, color } = classifyRelativeWind(
       windDirection,
-      cp.bearing
+      cp.bearing,
+      lang
     )
 
     // Calcul des composantes trigo
@@ -165,7 +170,10 @@ export async function fetchWeatherForCheckpoints(
 /**
  * Calcule les statistiques globales météo de la sortie.
  */
-export function computeRideWeatherSummary(checkpoints: Checkpoint[]): SegmentWeatherSummary {
+export function computeRideWeatherSummary(
+  checkpoints: Checkpoint[],
+  lang: Lang = 'fr'
+): SegmentWeatherSummary {
   const withWeather = checkpoints.filter((cp): cp is Checkpoint & { weather: WeatherPoint } =>
     Boolean(cp.weather)
   )
@@ -180,7 +188,7 @@ export function computeRideWeatherSummary(checkpoints: Checkpoint[]): SegmentWea
       minTempC: 0,
       maxTempC: 0,
       maxPrecipitationProb: 0,
-      dominantWindLabel: 'Données indisponibles',
+      dominantWindLabel: lang === 'en' ? 'No data available' : 'Données indisponibles',
     }
   }
 
@@ -215,10 +223,7 @@ export function computeRideWeatherSummary(checkpoints: Checkpoint[]): SegmentWea
   const crossPct = Math.round((crossCount / total) * 100)
   const tailPct = Math.round((tailCount / total) * 100)
 
-  let dominantWindLabel = 'Variable'
-  if (headPct >= 50) dominantWindLabel = 'Principalement de face 🔴'
-  else if (tailPct >= 50) dominantWindLabel = 'Principalement dans le dos 🚀'
-  else if (crossPct >= 40) dominantWindLabel = 'Principalement de travers 🟡'
+  const dominantWindLabel = getDominantWindLabel(headPct, tailPct, crossPct, lang)
 
   return {
     headwindPercent: headPct,
@@ -231,21 +236,4 @@ export function computeRideWeatherSummary(checkpoints: Checkpoint[]): SegmentWea
     maxPrecipitationProb: maxRainProb,
     dominantWindLabel,
   }
-}
-
-/**
- * Traduit le code météo WMO officiel en libellé français et icône.
- */
-export function getWmoWeatherDetails(code: number): { label: string; icon: string } {
-  if (code === 0) return { label: 'Ensoleillé / Ciel dégagé', icon: '☀️' }
-  if (code === 1) return { label: 'Peu nuageux', icon: '🌤️' }
-  if (code === 2) return { label: 'Partiellement nuageux', icon: '⛅' }
-  if (code === 3) return { label: 'Couvert', icon: '☁️' }
-  if (code === 45 || code === 48) return { label: 'Brouillard', icon: '🌫️' }
-  if (code >= 51 && code <= 55) return { label: 'Bruine légère', icon: '🌦️' }
-  if (code >= 61 && code <= 65) return { label: 'Pluie', icon: '🌧️' }
-  if (code >= 71 && code <= 77) return { label: 'Neige', icon: '🌨️' }
-  if (code >= 80 && code <= 82) return { label: 'Averses', icon: '🌧️' }
-  if (code >= 95 && code <= 99) return { label: 'Orage', icon: '⛈️' }
-  return { label: 'Météo variable', icon: '⛅' }
 }

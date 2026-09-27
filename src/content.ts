@@ -10,6 +10,7 @@ import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './service
 import { coordinatesToGpx } from './services/page-detector'
 import { parseGpxString } from './services/gpx'
 import { getStravaInfoFromUrl, fetchStravaGpx, decodePolyline } from './services/strava'
+import { getBrowserLang } from './services/i18n'
 import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
 
 // Intercepteur fetch pour capturer les tracés et flux Strava / Komoot dès leur réception réseau
@@ -48,7 +49,10 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
               }
               if (pts.length > 2) {
                 // @ts-expect-error global captured route
-                window.__velometeoCapturedRoute = { points: pts, name: data.name || 'Itinéraire Strava' }
+                window.__velometeoCapturedRoute = {
+                  points: pts,
+                  name: data.name || (getBrowserLang() === 'en' ? 'Strava route' : 'Itinéraire Strava'),
+                }
                 runAutoWeather()
               }
             }
@@ -110,10 +114,14 @@ function buildPayload(
   summary: SegmentWeatherSummary,
   settings: RideSettings
 ): InjectedWeatherPayload {
+  const lang = getBrowserLang()
   return {
+    lang,
     checkpoints: checkpoints.map((cp) => {
       const w = cp.weather
-      const wmo = w ? getWmoWeatherDetails(w.weatherCode) : { label: 'Météo', icon: '⛅' }
+      const wmo = w
+        ? getWmoWeatherDetails(w.weatherCode, lang)
+        : { label: lang === 'en' ? 'Weather' : 'Météo', icon: '⛅' }
       return {
         id: cp.id,
         lat: cp.lat,
@@ -131,7 +139,7 @@ function buildPayload(
         windGusts: w?.windGusts ?? 0,
         windDirection: w?.windDirection ?? 0,
         windCategory: w?.windCategory ?? 'headwind',
-        windCategoryLabel: w?.windCategoryLabel ?? 'Vent',
+        windCategoryLabel: w?.windCategoryLabel ?? (lang === 'en' ? 'Wind' : 'Vent'),
         windCategoryColor: w?.windCategoryColor ?? '#64748b',
         weatherIcon: wmo.icon,
         weatherLabel: wmo.label,
@@ -160,10 +168,11 @@ async function handleSettingsChange(partial: {
   currentSettings = { ...currentSettings, ...partial }
 
   try {
+    const lang = getBrowserLang()
     const timings = computeTrajectoryTiming(cachedRoute.points, currentSettings)
     const baseCheckpoints = generateCheckpoints(cachedRoute, currentSettings, timings)
-    const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints)
-    const summary = computeRideWeatherSummary(withWeather)
+    const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints, lang)
+    const summary = computeRideWeatherSummary(withWeather, lang)
 
     const payload = buildPayload(withWeather, summary, currentSettings)
 
@@ -242,9 +251,18 @@ async function runAutoWeather(): Promise<void> {
     // Sauvegarde globale pour l'extension popup
     // @ts-expect-error global cache
     window.__velometeoActiveGpx = gpxText
+    const lang = getBrowserLang()
     const headingText = (document.querySelector('h1')?.textContent?.trim() || document.title).replace(/\s*[-|•].*(?:komoot|strava).*$/i, '').trim()
     // @ts-expect-error global cache
-    window.__velometeoActiveTourTitle = headingText || (item.platform === 'strava' ? 'Itinéraire Strava' : 'Parcours Komoot')
+    window.__velometeoActiveTourTitle =
+      headingText ||
+      (item.platform === 'strava'
+        ? lang === 'en'
+          ? 'Strava route'
+          : 'Itinéraire Strava'
+        : lang === 'en'
+        ? 'Komoot tour'
+        : 'Parcours Komoot')
 
     cachedRoute = parseGpxString(gpxText)
 
@@ -255,10 +273,10 @@ async function runAutoWeather(): Promise<void> {
     const baseCheckpoints = generateCheckpoints(cachedRoute, currentSettings, timings)
 
     // 3. Récupération des prévisions météo Open-Meteo
-    const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints)
+    const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints, lang)
 
     // 4. Synthèse globale de la sortie
-    const summary = computeRideWeatherSummary(withWeather)
+    const summary = computeRideWeatherSummary(withWeather, lang)
 
     // 5. Préparation du payload et injection sur la carte
     const payload = buildPayload(withWeather, summary, currentSettings)

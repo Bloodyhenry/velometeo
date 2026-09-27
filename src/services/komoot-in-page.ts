@@ -6,6 +6,7 @@
 import { computeDeCollidedPositions } from './physics'
 
 export interface InjectedWeatherPayload {
+  lang?: 'fr' | 'en'
   checkpoints: Array<{
     id: string
     lat: number
@@ -63,6 +64,45 @@ export async function injectWeatherOnKomootMap(
   message?: string
 }> {
   try {
+    const userLang =
+      payload.lang ||
+      (typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('fr')
+        ? 'fr'
+        : 'en')
+
+    const wText = {
+      fr: {
+        calculating: 'Calcul...',
+        hide: 'Masquer',
+        show: 'Afficher',
+        avgWind: 'Vent moy.',
+        gusts: 'Rafales',
+        head: 'Face',
+        cross: 'Côté',
+        tail: 'Dos',
+        spacing: '📍 Espacement balises',
+        speed: '⚡ Vitesse moyenne',
+        departure: '🕐 Date & heure de départ',
+        passage: 'Passage :',
+        rain: 'Pluie :',
+      },
+      en: {
+        calculating: 'Calculating...',
+        hide: 'Hide',
+        show: 'Show',
+        avgWind: 'Avg wind',
+        gusts: 'Gusts',
+        head: 'Head',
+        cross: 'Cross',
+        tail: 'Tail',
+        spacing: '📍 Checkpoint spacing',
+        speed: '⚡ Target speed',
+        departure: '🕐 Departure date & time',
+        passage: 'Passing:',
+        rain: 'Rain:',
+      },
+    }[userLang]
+
     if (typeof onSettingsChange === 'function') {
       // @ts-expect-error global hook
       window.__velometeoOnSettingsChange = onSettingsChange
@@ -470,7 +510,7 @@ export async function injectWeatherOnKomootMap(
 
       tooltip.innerHTML = `
         <div style="font-weight: bold; border-bottom: 1px solid #334155; padding-bottom: 4px; margin-bottom: 4px; display: flex; justify-content: space-between;">
-          <span>Passage : ${cp.estimatedTimeStr}</span>
+          <span>${wText.passage} ${cp.estimatedTimeStr}</span>
           <span style="color: #60a5fa;">${cp.distKm} km</span>
         </div>
         <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
@@ -481,7 +521,7 @@ export async function injectWeatherOnKomootMap(
           ${cp.windCategoryLabel} (${cp.windSpeed} km/h)
         </div>
         <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">
-          Rafales : ${cp.windGusts} km/h • Pluie : ${cp.precipitationProb}% (${cp.precipitationMm} mm)
+          ${wText.gusts} : ${cp.windGusts} km/h • ${wText.rain} ${cp.precipitationProb}% (${cp.precipitationMm} mm)
         </div>
       `
       marker.appendChild(tooltip)
@@ -600,10 +640,10 @@ export async function injectWeatherOnKomootMap(
             🚴
           </div>
           <span style="font-weight: 800; font-size: 13px; letter-spacing: -0.2px;">VeloMétéo</span>
-          <span id="velometeo-loading-badge" style="display: none; font-size: 10px; color: #2563eb; font-weight: 700; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">Calcul...</span>
+          <span id="velometeo-loading-badge" style="display: none; font-size: 10px; color: #2563eb; font-weight: 700; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">${wText.calculating}</span>
         </div>
         <button id="velometeo-toggle-btn" style="background: #f1f5f9; border: none; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; color: #475569;">
-          Masquer
+          ${wText.hide}
         </button>
       </div>
 
@@ -613,14 +653,14 @@ export async function injectWeatherOnKomootMap(
             ${payload.summary.dominantWindLabel}
           </div>
           <div id="velometeo-wind-stats" style="font-size: 10px; color: #64748b; margin-bottom: 5px;">
-            Vent moy. ${payload.summary.avgWindSpeedKmH} km/h • Rafales ${payload.summary.maxGustKmH} km/h
+            ${wText.avgWind} ${payload.summary.avgWindSpeedKmH} km/h • ${wText.gusts} ${payload.summary.maxGustKmH} km/h
           </div>
 
           <!-- Jauge vent relatif -->
           <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; margin-bottom: 2px;">
-            <span id="velometeo-val-head" style="color: #ef4444;">Face ${payload.summary.headwindPercent}%</span>
-            <span id="velometeo-val-cross" style="color: #eab308;">Côté ${payload.summary.crosswindPercent}%</span>
-            <span id="velometeo-val-tail" style="color: #10b981;">Dos ${payload.summary.tailwindPercent}%</span>
+            <span id="velometeo-val-head" style="color: #ef4444;">${wText.head} ${payload.summary.headwindPercent}%</span>
+            <span id="velometeo-val-cross" style="color: #eab308;">${wText.cross} ${payload.summary.crosswindPercent}%</span>
+            <span id="velometeo-val-tail" style="color: #10b981;">${wText.tail} ${payload.summary.tailwindPercent}%</span>
           </div>
           <div style="height: 5px; width: 100%; background: #e2e8f0; border-radius: 9999px; overflow: hidden; display: flex;">
             <div id="velometeo-bar-head" style="width: ${payload.summary.headwindPercent}%; background: #ef4444; transition: width 0.3s ease;"></div>
@@ -634,7 +674,7 @@ export async function injectWeatherOnKomootMap(
           <!-- Slider Espacement Météo -->
           <div>
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 2px;">
-              <span style="font-weight: 600; color: #334155;">📍 Espacement balises</span>
+              <span style="font-weight: 600; color: #334155;">${wText.spacing}</span>
               <span id="velometeo-val-interval" style="font-weight: 700; color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 1px 5px; border-radius: 4px; font-size: 10px;">${intervalVal} km</span>
             </div>
             <input type="range" id="velometeo-slider-interval" min="3" max="30" step="1" value="${intervalVal}" style="width: 100%; accent-color: #7c3aed; cursor: pointer; height: 4px; margin: 3px 0; display: block;">
@@ -648,7 +688,7 @@ export async function injectWeatherOnKomootMap(
           <!-- Slider Vitesse moyenne cible -->
           <div>
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 2px;">
-              <span style="font-weight: 600; color: #334155;">⚡ Vitesse moyenne</span>
+              <span style="font-weight: 600; color: #334155;">${wText.speed}</span>
               <span id="velometeo-val-speed" style="font-weight: 700; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 5px; border-radius: 4px; font-size: 10px;">${speedVal} km/h</span>
             </div>
             <input type="range" id="velometeo-slider-speed" min="15" max="42" step="1" value="${speedVal}" style="width: 100%; accent-color: #059669; cursor: pointer; height: 4px; margin: 3px 0; display: block;">
@@ -662,7 +702,7 @@ export async function injectWeatherOnKomootMap(
           <!-- Heure de départ -->
           <div>
             <div style="font-size: 11px; font-weight: 600; color: #334155; margin-bottom: 2px;">
-              🕐 Date & heure de départ
+              ${wText.departure}
             </div>
             <input type="datetime-local" id="velometeo-input-departure" value="${departureVal}" style="width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font-family: inherit; box-sizing: border-box;">
           </div>
@@ -678,22 +718,22 @@ export async function injectWeatherOnKomootMap(
       if (domWind) domWind.textContent = summary.dominantWindLabel
 
       const windStats = widget.querySelector('#velometeo-wind-stats')
-      if (windStats) windStats.textContent = `Vent moy. ${summary.avgWindSpeedKmH} km/h • Rafales ${summary.maxGustKmH} km/h`
+      if (windStats) windStats.textContent = `${wText.avgWind} ${summary.avgWindSpeedKmH} km/h • ${wText.gusts} ${summary.maxGustKmH} km/h`
 
       const barHead = widget.querySelector('#velometeo-bar-head') as HTMLElement
       if (barHead) barHead.style.width = `${summary.headwindPercent}%`
       const valHead = widget.querySelector('#velometeo-val-head')
-      if (valHead) valHead.textContent = `Face ${summary.headwindPercent}%`
+      if (valHead) valHead.textContent = `${wText.head} ${summary.headwindPercent}%`
 
       const barCross = widget.querySelector('#velometeo-bar-cross') as HTMLElement
       if (barCross) barCross.style.width = `${summary.crosswindPercent}%`
       const valCross = widget.querySelector('#velometeo-val-cross')
-      if (valCross) valCross.textContent = `Côté ${summary.crosswindPercent}%`
+      if (valCross) valCross.textContent = `${wText.cross} ${summary.crosswindPercent}%`
 
       const barTail = widget.querySelector('#velometeo-bar-tail') as HTMLElement
       if (barTail) barTail.style.width = `${summary.tailwindPercent}%`
       const valTail = widget.querySelector('#velometeo-val-tail')
-      if (valTail) valTail.textContent = `Dos ${summary.tailwindPercent}%`
+      if (valTail) valTail.textContent = `${wText.tail} ${summary.tailwindPercent}%`
 
       if (settings.checkpointIntervalKm) {
         const valInterval = widget.querySelector('#velometeo-val-interval')
@@ -761,7 +801,7 @@ export async function injectWeatherOnKomootMap(
       overlay.style.display = isVisible ? 'block' : 'none'
       const body = widget.querySelector('#velometeo-widget-body') as HTMLElement
       if (body) body.style.display = isVisible ? 'block' : 'none'
-      toggleBtn.textContent = isVisible ? 'Masquer' : 'Afficher'
+      toggleBtn.textContent = isVisible ? wText.hide : wText.show
     })
 
     // Rendre le widget déplaçable (drag & drop)

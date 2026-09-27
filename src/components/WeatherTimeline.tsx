@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import type { Checkpoint } from '../types'
 import { getWmoWeatherDetails } from '../services/weather'
+import { useI18n, getWindCategoryLabel } from '../services/i18n'
 
 interface WeatherTimelineProps {
   checkpoints: Checkpoint[]
@@ -20,14 +21,16 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
   selectedCheckpointId,
   onSelectCheckpoint,
 }) => {
+  const { t, lang } = useI18n()
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-          <span>Déroulé météo chronologique étape par étape</span>
+          <span>{t('timelineTitle')}</span>
         </h2>
         <span className="text-xs text-slate-400">
-          {checkpoints.length} points de contrôle analysés
+          {t('timelineSubtitle', { count: checkpoints.length })}
         </span>
       </div>
 
@@ -35,7 +38,8 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
         {checkpoints.map((cp, idx) => {
           const isSelected = cp.id === selectedCheckpointId
           const w = cp.weather
-          const wmo = w ? getWmoWeatherDetails(w.weatherCode) : null
+          const wmo = w ? getWmoWeatherDetails(w.weatherCode, lang) : null
+          const localizedWindLabel = w ? getWindCategoryLabel(w.windCategory, lang) : ''
           const timeStr = cp.estimatedTime.toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
@@ -66,15 +70,15 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
 
                 {isStart ? (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                    DÉPART
+                    {t('startPoint')}
                   </span>
                 ) : isEnd ? (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-white">
-                    ARRIVÉE
+                    {t('finishPoint')}
                   </span>
                 ) : (
                   <span className="text-[10px] font-semibold text-slate-400">
-                    Point #{idx + 1}
+                    {t('checkpointNum', { idx: idx + 1 })}
                   </span>
                 )}
               </div>
@@ -90,7 +94,7 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
                         <div className="text-[11px] text-slate-500 flex items-center gap-1">
                           <Thermometer className="w-3 h-3 text-rose-500 inline" />
                           <span>{w.temperature}°C</span>
-                          <span className="text-slate-400">(ressenti {w.apparentTemperature}°C)</span>
+                          <span className="text-slate-400">({t('feelsLike')} {w.apparentTemperature}°C)</span>
                         </div>
                       </div>
                     </div>
@@ -121,11 +125,11 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
                           className="font-bold text-xs"
                           style={{ color: w.windCategoryColor }}
                         >
-                          {w.windCategoryLabel}
+                          {localizedWindLabel}
                         </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1">
                           <Navigation className="w-2.5 h-2.5" />
-                          <span>Cap cycliste {Math.round(cp.bearing)}° • Vent {w.windDirection}°</span>
+                          <span>{t('riderBearing', { bearing: Math.round(cp.bearing), wind: w.windDirection })}</span>
                         </div>
                       </div>
                     </div>
@@ -136,7 +140,7 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
                         <span>{w.windSpeed} km/h</span>
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        Rafales à {w.windGusts} km/h
+                        {t('gustsUpTo', { val: w.windGusts })}
                       </div>
                     </div>
                   </div>
@@ -145,15 +149,15 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
                   <div className="flex justify-between text-[10px] text-slate-400 px-1 pt-0.5">
                     <span>
                       {w.headwindComponent > 0
-                        ? `Résistance face : +${w.headwindComponent} km/h`
-                        : `Poussée dos : ${Math.abs(w.headwindComponent)} km/h`}
+                        ? t('headwindResistance', { val: w.headwindComponent })
+                        : t('tailwindBoost', { val: Math.abs(w.headwindComponent) })}
                     </span>
-                    <span>Latéral : {w.crosswindComponent} km/h</span>
+                    <span>{t('lateralWind', { val: w.crosswindComponent })}</span>
                   </div>
                 </div>
               ) : (
                 <div className="py-4 text-center text-xs text-slate-400">
-                  Calcul météo en cours...
+                  {t('loadingWeather')}
                 </div>
               )}
             </div>

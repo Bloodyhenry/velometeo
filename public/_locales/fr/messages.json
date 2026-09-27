@@ -1,0 +1,14 @@
+{
+  "appName": {
+    "message": "VeloMétéo - Météo & Vent pour cyclistes",
+    "description": "Nom de l'extension"
+  },
+  "appDesc": {
+    "message": "Prévisions météo heure par heure et calcul du vent relatif le long de vos parcours vélo (fichiers GPX, compatible Komoot et Strava).",
+    "description": "Description de l'extension"
+  },
+  "actionTitle": {
+    "message": "Ouvrir VeloMétéo",
+    "description": "Titre du bouton d'action dans la barre d'outils"
+  }
+}
