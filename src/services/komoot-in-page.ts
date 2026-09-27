@@ -105,6 +105,10 @@ export async function injectWeatherOnKomootMap(
     }
 
     function createTerrainEngineAdapter(te: any, canvas: HTMLCanvasElement, container: HTMLElement) {
+      let isListening = false
+      let rafId: number | null = null
+      let lastCamState = ''
+
       return {
         project([lon, lat]: [number, number]) {
           try {
@@ -120,34 +124,47 @@ export async function injectWeatherOnKomootMap(
           }
         },
         on(_evt: string, cb: () => void) {
-          if (typeof te.addPostUpdateListener === 'function') {
-            try { te.addPostUpdateListener(cb) } catch {}
-          }
-          try {
-            const cam = te.getCamera?.()
-            if (cam && typeof cam.addInteractionListener === 'function') {
-              cam.addInteractionListener(cb)
+          isListening = true
+
+          // ponytail: NE JAMAIS enregistrer de callbacks JS directes dans Djinni C++/WASM (addPostUpdateListener/addInteractionListener).
+          // Cela déclenche une TypeError 'apply' dans Emscripten et fait crasher la boucle WebGL (écran noir).
+          // On synchronise les marqueurs via la lecture non-intrusive de cam.getTarget() et les événements DOM.
+          const checkCamera = () => {
+            if (!isListening) return
+            try {
+              const cam = te.getCamera?.()
+              if (cam && typeof cam.getTarget === 'function') {
+                const t = cam.getTarget()
+                const lp = t.lookAtPoint
+                const state = `${lp?.latitude?.toFixed(5)}_${lp?.longitude?.toFixed(5)}_${Math.round(t.distance || 0)}_${Math.round(t.bearing || 0)}_${canvas.offsetWidth}_${canvas.offsetHeight}`
+                if (state !== lastCamState) {
+                  lastCamState = state
+                  cb()
+                }
+              }
+            } catch {
+              // fallback
             }
-          } catch {}
+            rafId = requestAnimationFrame(checkCamera)
+          }
+
+          rafId = requestAnimationFrame(checkCamera)
+
           canvas.addEventListener('wheel', cb, { passive: true })
           canvas.addEventListener('pointermove', cb, { passive: true })
           canvas.addEventListener('touchmove', cb, { passive: true })
           window.addEventListener('resize', cb)
         },
-        off(_evt: string, cb: () => void) {
-          if (typeof te.removePostUpdateListener === 'function') {
-            try { te.removePostUpdateListener(cb) } catch {}
+        off(_evt: string, _cb: () => void) {
+          isListening = false
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId)
+            rafId = null
           }
-          try {
-            const cam = te.getCamera?.()
-            if (cam && typeof cam.removeInteractionListener === 'function') {
-              cam.removeInteractionListener(cb)
-            }
-          } catch {}
-          canvas.removeEventListener('wheel', cb)
-          canvas.removeEventListener('pointermove', cb)
-          canvas.removeEventListener('touchmove', cb)
-          window.removeEventListener('resize', cb)
+          canvas.removeEventListener('wheel', _cb)
+          canvas.removeEventListener('pointermove', _cb)
+          canvas.removeEventListener('touchmove', _cb)
+          window.removeEventListener('resize', _cb)
         },
         getContainer() {
           return container
@@ -209,8 +226,8 @@ export async function injectWeatherOnKomootMap(
             (canvas.closest('.mapboxgl-canvas-container')?.parentElement as HTMLElement) ||
             (canvas.closest('.mapboxgl-map') as HTMLElement) ||
             (canvas.closest('.leaflet-container') as HTMLElement) ||
-            (canvas.closest('[class*="CoreMap_coreMap"]') as HTMLElement) ||
             (canvas.closest('[class*="Map_map"]') as HTMLElement) ||
+            (canvas.closest('[class*="CoreMap_coreMap"]') as HTMLElement) ||
             (canvas.closest('[class*="map-container"]') as HTMLElement) ||
             (canvas.parentElement?.parentElement as HTMLElement) ||
             (canvas.parentElement as HTMLElement)
@@ -379,7 +396,9 @@ export async function injectWeatherOnKomootMap(
     overlay.style.zIndex = '5'
     overlay.style.overflow = 'hidden'
 
-    mapContainer.style.position = 'relative'
+    if (window.getComputedStyle(mapContainer).position === 'static') {
+      mapContainer.style.position = 'relative'
+    }
     mapContainer.appendChild(overlay)
 
     const markerEls: Array<{ el: HTMLElement; lon: number; lat: number; bearing: number }> = []
