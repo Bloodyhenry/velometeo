@@ -4,7 +4,7 @@
 
 [English](README.md) • [Français](README.fr.md)
 
-![VeloMétéo](public/favicon.svg)
+![Aperçu VeloMétéo météo et vent sur parcours](public/screenshot.jpg)
 
 ---
 
