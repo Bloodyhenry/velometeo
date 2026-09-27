@@ -292,14 +292,15 @@ export async function detectActiveTourTab(): Promise<DetectedTabInfo | null> {
       }
     }
 
-    if (/strava\.com\/(routes|activities)\/([r]?\d+)/i.test(url)) {
-      const match = url.match(/\/(routes|activities)\/([r]?\d+)/i)
+    if (/strava\.com/i.test(url)) {
+      const match = url.match(/\/(?:routes|activities|maps|athlete\/routes)(?:\/([r]?\d+))?/i)
+      const tourId = match?.[1] || (url.includes('/maps') || url.includes('/routes') ? 'builder' : (url.includes('/activities') ? 'activity' : undefined))
       return {
         tabId: tab.id,
         platform: 'strava',
         url,
         title: tab.title || 'Strava',
-        tourId: match ? match[2] : undefined,
+        tourId,
       }
     }
 
@@ -307,6 +308,74 @@ export async function detectActiveTourTab(): Promise<DetectedTabInfo | null> {
   } catch (err) {
     console.warn('Erreur lors de la détection de l’onglet actif :', err)
     return null
+  }
+}
+
+/**
+ * Fonction exécutée directement dans le contexte de la page Strava (world: 'MAIN')
+ * pour extraire le tracé actif.
+ */
+export function extractStravaInPage(): {
+  success: boolean
+  gpxContent?: string
+  tourName?: string
+  error?: string
+} {
+  try {
+    const win = window as any // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (win.__velometeoActiveGpx) {
+      return {
+        success: true,
+        gpxContent: win.__velometeoActiveGpx,
+        tourName: win.__velometeoActiveTourTitle || document.querySelector('h1')?.textContent?.trim() || document.title || 'Itinéraire Strava',
+      }
+    }
+
+    // Extraction rapide depuis scripts JSON ou __NEXT_DATA__
+    const nextData = document.getElementById('__NEXT_DATA__')
+    if (nextData) {
+      try {
+        const json = JSON.parse(nextData.textContent || '{}')
+        const pr = json?.props?.pageProps?.prefetchedRoute || json?.props?.pageProps?.route || json?.props?.pageProps?.activity
+        const poly = pr?.polyline || pr?.summary_polyline || pr?.map?.summary_polyline
+        if (poly && typeof poly === 'string') {
+          let index = 0, lat = 0, lng = 0
+          const coordinates: Array<{ lat: number; lng: number }> = []
+          while (index < poly.length) {
+            let b: number, shift = 0, result = 0
+            do {
+              b = poly.charCodeAt(index++) - 63
+              result |= (b & 0x1f) << shift
+              shift += 5
+            } while (b >= 0x20)
+            lat += ((result & 1) ? ~(result >> 1) : (result >> 1))
+            shift = 0
+            result = 0
+            do {
+              b = poly.charCodeAt(index++) - 63
+              result |= (b & 0x1f) << shift
+              shift += 5
+            } while (b >= 0x20)
+            lng += ((result & 1) ? ~(result >> 1) : (result >> 1))
+            coordinates.push({ lat: lat / 1e5, lng: lng / 1e5 })
+          }
+          if (coordinates.length > 2) {
+            const trkpts = coordinates.map((pt) => `    <trkpt lat="${pt.lat.toFixed(6)}" lon="${pt.lng.toFixed(6)}"><ele>0</ele></trkpt>`).join('\n')
+            const name = pr.name || 'Itinéraire Strava'
+            const gpx = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="VeloMeteo" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${name}</name></metadata><trk><name>${name}</name><trkseg>\n${trkpts}\n</trkseg></trk></gpx>`
+            return { success: true, gpxContent: gpx, tourName: name }
+          }
+        }
+      } catch {}
+    }
+
+    return {
+      success: false,
+      error: "En attente du chargement du tracé sur la page Strava. Ouvrez ou tracez un itinéraire / une activité.",
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Erreur inconnue'
+    return { success: false, error: msg }
   }
 }
 
@@ -340,7 +409,7 @@ export async function extractFromActiveTab(
     } catch (e) {
       console.warn("Tentative de fetch direct Komoot échouée, passage à l'injection page :", e)
     }
-  } else if (tabInfo.platform === 'strava' && tabInfo.tourId) {
+  } else if (tabInfo.platform === 'strava' && tabInfo.tourId && tabInfo.tourId !== 'builder' && tabInfo.tourId !== 'activity') {
     const isRoute = tabInfo.url.includes('/routes/')
     const exportUrl = isRoute
       ? `https://www.strava.com/routes/${tabInfo.tourId}/export_gpx`
@@ -375,27 +444,42 @@ export async function extractFromActiveTab(
   }
 
   try {
-    // Exécution du script directement dans le contexte de la page Komoot (world: 'MAIN')
+    const isStrava = tabInfo.platform === 'strava'
     // @ts-expect-error chrome extension API
     const injectionResults = await chrome.scripting.executeScript({
       target: { tabId: tabInfo.tabId },
       world: 'MAIN',
-      func: extractKomootInPage,
+      func: isStrava ? extractStravaInPage : extractKomootInPage,
     })
 
     const result = injectionResults?.[0]?.result
-    if (!result || !result.success || !result.items) {
+    if (!result || !result.success) {
       return {
         success: false,
         error: result?.error || "Échec de l'extraction des coordonnées du tour.",
       }
     }
 
-    const gpx = coordinatesToGpx(result.items, result.title || tabInfo.title || 'Parcours')
+    if (result.gpxContent) {
+      return {
+        success: true,
+        gpxContent: result.gpxContent,
+        tourName: result.tourName || tabInfo.title || 'Parcours Strava',
+      }
+    }
+
+    if (result.items) {
+      const gpx = coordinatesToGpx(result.items, result.title || tabInfo.title || 'Parcours')
+      return {
+        success: true,
+        gpxContent: gpx,
+        tourName: result.title || tabInfo.title || 'Parcours',
+      }
+    }
+
     return {
-      success: true,
-      gpxContent: gpx,
-      tourName: result.title || tabInfo.title || 'Parcours',
+      success: false,
+      error: "Aucune coordonnée exploitable trouvée.",
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erreur lors de l'injection du script"
@@ -473,4 +557,7 @@ export async function injectWeatherIntoKomootTab(
     return { success: false, message: msg }
   }
 }
+
+export const injectWeatherIntoTab = injectWeatherIntoKomootTab
+
 

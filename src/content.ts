@@ -9,8 +9,56 @@ import { fetchWeatherForCheckpoints, computeRideWeatherSummary, getWmoWeatherDet
 import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './services/komoot-in-page'
 import { coordinatesToGpx } from './services/page-detector'
 import { parseGpxString } from './services/gpx'
-import { getStravaInfoFromUrl, fetchStravaGpx } from './services/strava'
+import { getStravaInfoFromUrl, fetchStravaGpx, decodePolyline } from './services/strava'
 import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
+
+// Intercepteur fetch pour capturer les tracés et flux Strava / Komoot dès leur réception réseau
+if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+  const origFetch = window.fetch
+  // @ts-expect-error global sniffer flag
+  if (!window.__velometeoFetchSnifferInstalled) {
+    // @ts-expect-error global sniffer flag
+    window.__velometeoFetchSnifferInstalled = true
+    window.fetch = async function (...args) {
+      const response = await origFetch.apply(this, args)
+      try {
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url || ''
+        if (
+          url.includes('/routes') ||
+          url.includes('/streams') ||
+          url.includes('/api/v3/routes') ||
+          url.includes('/coordinates')
+        ) {
+          const clone = response.clone()
+          clone.json().then((data) => {
+            if (!data) return
+            const poly = data.polyline || data.summary_polyline || data.map?.polyline || data.map?.summary_polyline
+            if (poly && typeof poly === 'string') {
+              const pts = decodePolyline(poly)
+              if (pts.length > 2) {
+                // @ts-expect-error global captured route
+                window.__velometeoCapturedRoute = { points: pts, name: data.name || data.title }
+                runAutoWeather()
+              }
+            } else if (Array.isArray(data.legs) && data.legs.length > 0) {
+              const pts: Array<{ lat: number; lng: number }> = []
+              for (const leg of data.legs) {
+                const lp = leg.polyline || leg.summary_polyline || (typeof leg.geometry === 'string' ? leg.geometry : null)
+                if (lp) pts.push(...decodePolyline(lp))
+              }
+              if (pts.length > 2) {
+                // @ts-expect-error global captured route
+                window.__velometeoCapturedRoute = { points: pts, name: data.name || 'Itinéraire Strava' }
+                runAutoWeather()
+              }
+            }
+          }).catch(() => {})
+        }
+      } catch {}
+      return response
+    }
+  }
+}
 
 function getDefaultDepartureTime(): string {
   const d = new Date()
@@ -191,6 +239,13 @@ async function runAutoWeather(): Promise<void> {
       return
     }
 
+    // Sauvegarde globale pour l'extension popup
+    // @ts-expect-error global cache
+    window.__velometeoActiveGpx = gpxText
+    const headingText = (document.querySelector('h1')?.textContent?.trim() || document.title).replace(/\s*[-|•].*(?:komoot|strava).*$/i, '').trim()
+    // @ts-expect-error global cache
+    window.__velometeoActiveTourTitle = headingText || (item.platform === 'strava' ? 'Itinéraire Strava' : 'Parcours Komoot')
+
     cachedRoute = parseGpxString(gpxText)
 
     // 1. Calculs physiques de timing
@@ -257,3 +312,15 @@ window.addEventListener('popstate', () => {
     runAutoWeather()
   }
 })
+
+// Sur Strava /maps ou builder, si aucun tracé n'est encore affiché, vérifier périodiquement si un tracé est apparu
+if (typeof window !== 'undefined' && window.location.hostname.includes('strava.')) {
+  setInterval(() => {
+    if (!document.getElementById('velometeo-komoot-overlay') && !isRunning) {
+      const item = getCurrentTourItem()
+      if (item) {
+        runAutoWeather()
+      }
+    }
+  }, 2500)
+}

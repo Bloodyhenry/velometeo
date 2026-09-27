@@ -228,13 +228,19 @@ export function App() {
                   {fileName || detectedTab.title}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {detectedTab.platform === 'strava' ? 'Parcours ou activité Strava' : 'Parcours Komoot'} synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.
+                  {detectedTab.tourId && detectedTab.tourId !== 'builder' && detectedTab.tourId !== 'activity'
+                    ? `${detectedTab.platform === 'strava' ? 'Parcours ou activité Strava' : 'Parcours Komoot'} synchronisé — Tous les réglages (espacement balises, vitesse cible, départ) sont directement ajustables dans la fenêtre flottante sur votre carte.`
+                    : detectedTab.platform === 'strava'
+                    ? "Page Strava détectée — Ouvrez ou tracez un itinéraire / une activité pour projeter automatiquement les balises météo et le calcul du vent."
+                    : "Page Komoot détectée — Ouvrez un parcours pour lancer la météo."}
                 </p>
               </div>
             </div>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full shrink-0">
-              Actif sur la carte
-            </span>
+            {route && checkpoints.length > 0 && (
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full shrink-0">
+                Actif sur la carte
+              </span>
+            )}
           </div>
         ) : (
           <>

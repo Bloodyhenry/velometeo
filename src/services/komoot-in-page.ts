@@ -78,7 +78,8 @@ export async function injectWeatherOnKomootMap(
 
     // 1. Recherche robuste de la carte et de son conteneur (gère les classes CSS hashées de Komoot et les iframes)
     function ensureMapProject(m: any) {
-      if (m && typeof m.project !== 'function') {
+      if (!m) return
+      if (typeof m.project !== 'function') {
         if (typeof m.latLngToContainerPoint === 'function') {
           m.project = ([lon, lat]: [number, number]) => {
             const pt = m.latLngToContainerPoint([lat, lon])
@@ -90,6 +91,67 @@ export async function injectWeatherOnKomootMap(
             return { x: pt.x, y: pt.y }
           }
         }
+      }
+      if (typeof m.on !== 'function') {
+        m.on = (evt: string, cb: () => void) => {
+          if (typeof m.addEventListener === 'function') m.addEventListener(evt, cb)
+        }
+      }
+      if (typeof m.off !== 'function') {
+        m.off = (evt: string, cb: () => void) => {
+          if (typeof m.removeEventListener === 'function') m.removeEventListener(evt, cb)
+        }
+      }
+    }
+
+    function createTerrainEngineAdapter(te: any, canvas: HTMLCanvasElement, container: HTMLElement) {
+      return {
+        project([lon, lat]: [number, number]) {
+          try {
+            const cam = te.getCamera?.()
+            if (!cam?.getScreenPosition) return { x: -9999, y: -9999 }
+            const pt = cam.getScreenPosition({ latitude: lat, longitude: lon })
+            if (!pt || pt.isOccluded) return { x: -9999, y: -9999 }
+            const w = canvas.offsetWidth || canvas.width || 1
+            const h = canvas.offsetHeight || canvas.height || 1
+            return { x: pt.x * w, y: pt.y * h }
+          } catch {
+            return { x: -9999, y: -9999 }
+          }
+        },
+        on(_evt: string, cb: () => void) {
+          if (typeof te.addPostUpdateListener === 'function') {
+            try { te.addPostUpdateListener(cb) } catch {}
+          }
+          try {
+            const cam = te.getCamera?.()
+            if (cam && typeof cam.addInteractionListener === 'function') {
+              cam.addInteractionListener(cb)
+            }
+          } catch {}
+          canvas.addEventListener('wheel', cb, { passive: true })
+          canvas.addEventListener('pointermove', cb, { passive: true })
+          canvas.addEventListener('touchmove', cb, { passive: true })
+          window.addEventListener('resize', cb)
+        },
+        off(_evt: string, cb: () => void) {
+          if (typeof te.removePostUpdateListener === 'function') {
+            try { te.removePostUpdateListener(cb) } catch {}
+          }
+          try {
+            const cam = te.getCamera?.()
+            if (cam && typeof cam.removeInteractionListener === 'function') {
+              cam.removeInteractionListener(cb)
+            }
+          } catch {}
+          canvas.removeEventListener('wheel', cb)
+          canvas.removeEventListener('pointermove', cb)
+          canvas.removeEventListener('touchmove', cb)
+          window.removeEventListener('resize', cb)
+        },
+        getContainer() {
+          return container
+        },
       }
     }
 
@@ -177,6 +239,12 @@ export async function injectWeatherOnKomootMap(
                 while (curr && depth < 60) {
                   const p = curr.memoizedProps
                   if (p) {
+                    // Strava FATMAP CoreMap terrainEngine
+                    const te = p.value?.terrainEngine || p.terrainEngine || p.value?.engine || p.engine
+                    if (te && typeof te.getCamera === 'function') {
+                      return { map: createTerrainEngineAdapter(te, canvas, container), container }
+                    }
+
                     ensureMapProject(p)
                     if (typeof p.project === 'function') return { map: p, container }
                     if (p.map) {
@@ -194,6 +262,10 @@ export async function injectWeatherOnKomootMap(
                     for (const k of Object.keys(p)) {
                       const val = p[k]
                       if (val && typeof val === 'object') {
+                        const subTe = val.terrainEngine || val.engine
+                        if (subTe && typeof subTe.getCamera === 'function') {
+                          return { map: createTerrainEngineAdapter(subTe, canvas, container), container }
+                        }
                         ensureMapProject(val)
                         if (typeof val.project === 'function') return { map: val, container }
                         if (val.map) {
@@ -209,6 +281,10 @@ export async function injectWeatherOnKomootMap(
                   while (state && sDepth < 35) {
                     const val = state.memoizedState
                     if (val && typeof val === 'object') {
+                      const te = val.terrainEngine || val.current?.terrainEngine
+                      if (te && typeof te.getCamera === 'function') {
+                        return { map: createTerrainEngineAdapter(te, canvas, container), container }
+                      }
                       ensureMapProject(val)
                       if (typeof val.project === 'function') return { map: val, container }
                       if (val.current) {
@@ -225,6 +301,10 @@ export async function injectWeatherOnKomootMap(
                   }
 
                   if (curr.stateNode && typeof curr.stateNode === 'object') {
+                    const te = curr.stateNode.terrainEngine
+                    if (te && typeof te.getCamera === 'function') {
+                      return { map: createTerrainEngineAdapter(te, canvas, container), container }
+                    }
                     ensureMapProject(curr.stateNode)
                     if (typeof curr.stateNode.project === 'function') return { map: curr.stateNode, container }
                     if (curr.stateNode.map) {
@@ -424,8 +504,13 @@ export async function injectWeatherOnKomootMap(
       for (let i = 0; i < markerEls.length; i++) {
         const el = markerEls[i].el
         const pos = deCollided[i]
-        el.style.left = `${Math.round(pos.x)}px`
-        el.style.top = `${Math.round(pos.y)}px`
+        if (pos.x < -100 || pos.y < -100 || pos.x > 10000 || pos.y > 10000) {
+          el.style.display = 'none'
+        } else {
+          el.style.display = 'block'
+          el.style.left = `${Math.round(pos.x)}px`
+          el.style.top = `${Math.round(pos.y)}px`
+        }
       }
     }
 
