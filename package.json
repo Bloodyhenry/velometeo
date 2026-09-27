@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build && esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --target=es2022",
     "check-logic": "tsx src/services/check-logic.ts",
     "lint": "oxlint",
+    "lint:firefox": "npx web-ext lint --source-dir dist",
+    "package:firefox": "npx web-ext build --source-dir dist --artifacts-dir web-ext-artifacts --overwrite-dest",
     "preview": "vite preview"
   },
   "dependencies": {

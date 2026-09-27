@@ -30,6 +30,7 @@ Open a new tab in your browser and enter the corresponding address in the URL ba
 - **Google Chrome / Brave / Vivaldi / Arc**: `chrome://extensions`
 - **Microsoft Edge**: `edge://extensions`
 - **Opera**: `opera://extensions`
+- **Mozilla Firefox**: `about:debugging#/runtime/this-firefox` (select **This Firefox** > **Load Temporary Add-on...** > pick `manifest.json`)
 
 Press **Enter** to open the management page.
 
@@ -117,6 +118,10 @@ npm run lint
 
 # 4. Build extension bundle (outputs to dist/)
 npm run build
+
+# 5. Lint & Package for Firefox / AMO (outputs to web-ext-artifacts/)
+npm run lint:firefox
+npm run package:firefox
 ```
 
 Once built, point your browser's **Load unpacked** dialog to the `dist/` directory.
