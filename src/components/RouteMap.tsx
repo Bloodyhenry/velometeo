@@ -68,6 +68,8 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     map.fitBounds(polyline.getBounds(), { padding: [30, 30] })
   }, [route])
 
+  const markersMapRef = useRef<Map<string, L.Marker>>(new Map())
+
   // 3. Mise à jour des marqueurs météo aux checkpoints
   useEffect(() => {
     const map = mapInstanceRef.current
@@ -75,9 +77,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     if (!map || !layer) return
 
     layer.clearLayers()
+    markersMapRef.current.clear()
 
     checkpoints.forEach((cp) => {
-      const isSelected = cp.id === selectedCheckpointId
       const w = cp.weather
       const wmo = w ? getWmoWeatherDetails(w.weatherCode, lang) : null
       const localizedWindLabel = w ? getWindCategoryLabel(w.windCategory, lang) : ''
@@ -87,13 +89,11 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       const windAngle = w ? w.windDirection : 0
 
       const html = `
-        <div class="relative group cursor-pointer flex flex-col items-center">
-          <div style="background-color: ${color};" class="w-8 h-8 rounded-full border-2 ${
-            isSelected ? 'border-blue-600 scale-125 ring-4 ring-blue-300' : 'border-white'
-          } shadow-md flex items-center justify-center text-white text-xs font-bold transition-transform">
+        <div id="marker-inner-${cp.id}" class="relative group cursor-pointer flex flex-col items-center">
+          <div style="background-color: ${color};" class="w-8 h-8 rounded-full border-2 border-white shadow-md flex items-center justify-center text-white text-xs font-bold transition-transform">
             ${
               w
-                ? `<div style="transform: rotate(${windAngle + 180}deg); display: inline-block;">➔</div>`
+                ? `<div style="transform: rotate(${windAngle + 90}deg); display: inline-block;">➔</div>`
                 : '•'
             }
           </div>
@@ -150,7 +150,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                 <span class="font-medium" style="color: ${w.windCategoryColor};">
                   ${localizedWindLabel}
                 </span>
-                <span class="font-bold text-slate-700">${w.windSpeed} km/h (rafales ${w.windGusts})</span>
+                <span class="font-bold text-slate-700">${w.windSpeed} km/h (${t('gustsUpTo', { val: w.windGusts })})</span>
               </div>
               <div class="flex items-center justify-between text-slate-500 text-[11px]">
                 <span>${t('precipitation')}</span>
@@ -169,8 +169,32 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       })
 
       layer.addLayer(marker)
+      markersMapRef.current.set(cp.id, marker)
     })
-  }, [checkpoints, selectedCheckpointId, onSelectCheckpoint, lang, t])
+  }, [checkpoints, onSelectCheckpoint, lang, t])
+
+  // ponytail: Mise en valeur visuelle et ouverture du popup sans détruire la couche de marqueurs
+  useEffect(() => {
+    markersMapRef.current.forEach((marker, id) => {
+      const isSelected = id === selectedCheckpointId
+      const innerEl = document.getElementById(`marker-inner-${id}`)
+      if (innerEl) {
+        const circle = innerEl.firstElementChild as HTMLElement
+        if (circle) {
+          if (isSelected) {
+            circle.classList.add('scale-125', 'ring-4', 'ring-blue-300', 'border-blue-600')
+            circle.classList.remove('border-white')
+          } else {
+            circle.classList.remove('scale-125', 'ring-4', 'ring-blue-300', 'border-blue-600')
+            circle.classList.add('border-white')
+          }
+        }
+      }
+      if (isSelected && !marker.isPopupOpen()) {
+        marker.openPopup()
+      }
+    })
+  }, [selectedCheckpointId])
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[420px]">

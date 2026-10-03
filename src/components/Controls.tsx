@@ -49,7 +49,12 @@ export const Controls: React.FC<ControlsProps> = ({
           <input
             type="datetime-local"
             value={settings.departureTime}
-            onChange={(e) => handleChange('departureTime', e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val && !Number.isNaN(Date.parse(val))) {
+                handleChange('departureTime', val)
+              }
+            }}
             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-slate-50/50"
           />
           <p className="text-[11px] text-slate-400">{t('hourlyForecast')}</p>

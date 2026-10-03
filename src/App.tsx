@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Bike, AlertCircle, Compass, ExternalLink } from 'lucide-react'
 import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
 import { parseGpxString } from './services/gpx'
@@ -11,7 +11,6 @@ import { SAMPLE_GPX_CONTENT } from './services/sample-route'
 import {
   detectActiveTourTab,
   extractFromActiveTab,
-  injectWeatherIntoKomootTab,
 } from './services/page-detector'
 import type { DetectedTabInfo } from './services/page-detector'
 import { LanguageProvider, useI18n } from './services/i18n'
@@ -40,7 +39,8 @@ function AppContent() {
       return null
     }
   })
-  const [fileName, setFileName] = useState<string>(() => t('demoFileName'))
+  const [customFileName, setCustomFileName] = useState<string | null>(null)
+  const fileName = customFileName ?? t('demoFileName')
   const [settings, setSettings] = useState<RideSettings>({
     departureTime: getDefaultDepartureTime(),
     targetSpeedKmH: 25,
@@ -48,77 +48,71 @@ function AppContent() {
     checkpointIntervalKm: 10,
   })
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
-  const [weatherSummary, setWeatherSummary] = useState<SegmentWeatherSummary | null>(null)
   const [selectedCheckpointId, setSelectedCheckpointId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [detectedTab, setDetectedTab] = useState<DetectedTabInfo | null>(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
-  // Calcule la physique et interroge Open-Meteo pour la trace courante
-  const processRouteAndWeather = useCallback(
-    async (currentRoute: RouteData, currentSettings: RideSettings) => {
-      setIsLoading(true)
-      setErrorMessage(null)
+  // ponytail: weatherSummary est purement dérivé des checkpoints et de la langue, aucun state séparé nécessaire
+  const weatherSummary = useMemo<SegmentWeatherSummary | null>(() => {
+    return checkpoints.length > 0 ? computeRideWeatherSummary(checkpoints, lang) : null
+  }, [checkpoints, lang])
+
+  // ponytail: Effet unique avec debounce 280ms et AbortController pour garantir qu'un seul fetch est en vol et absorber les sliders
+  useEffect(() => {
+    if (!route) {
+      setCheckpoints([])
+      return
+    }
+    const controller = new AbortController()
+    setIsLoading(true)
+    setErrorMessage(null)
+
+    const timer = setTimeout(async () => {
       try {
-        // 1. Calcul de la physique et des horaires d'arrivée par segment
-        const timings = computeTrajectoryTiming(currentRoute.points, currentSettings)
-
-        // 2. Génération des checkpoints
-        const baseCheckpoints = generateCheckpoints(currentRoute, currentSettings, timings)
-
-        // 3. Appel de l'API météo Open-Meteo
-        const withWeather = await fetchWeatherForCheckpoints(baseCheckpoints, lang)
-
-        setCheckpoints(withWeather)
-
-        // 4. Synthèse globale
-        const summary = computeRideWeatherSummary(withWeather, lang)
-        setWeatherSummary(summary)
+        const timings = computeTrajectoryTiming(route.points, settings)
+        const baseCheckpoints = generateCheckpoints(route, settings, timings)
+        const withWeather = await fetchWeatherForCheckpoints(
+          baseCheckpoints,
+          lang,
+          controller.signal
+        )
+        if (!controller.signal.aborted) {
+          setCheckpoints(withWeather)
+        }
       } catch (err: unknown) {
+        if (controller.signal.aborted) return
         console.error('Erreur traitement météo :', err)
         const msg = err instanceof Error ? err.message : t('unexpectedError')
         setErrorMessage(msg)
       } finally {
-        setIsLoading(false)
+        if (!controller.signal.aborted) {
+          setIsLoading(false)
+        }
       }
-    },
-    [lang, t]
-  )
+    }, 280)
 
-  // ponytail: Synchronise le titre de démo et les synthèses dynamiques au changement de langue
-  useEffect(() => {
-    setFileName((prev) => {
-      if (
-        prev === 'Boucle Démo - Col de Porte & Chartreuse (65 km)' ||
-        prev === 'Demo Loop - Col de Porte & Chartreuse (65 km)' ||
-        prev === 'Boucle Démo - Col de Porte (65 km)' ||
-        prev === 'Demo Loop - Col de Porte (65 km)'
-      ) {
-        return t('demoFileName')
-      }
-      return prev
-    })
-
-    if (checkpoints.length > 0) {
-      setWeatherSummary(computeRideWeatherSummary(checkpoints, lang))
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
     }
-  }, [lang, t]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [route, settings, lang, refreshTrigger, t])
 
   // Chargement d'une trace GPX (upload ou démo)
   const handleGpxLoaded = useCallback(
-    (gpxContent: string, name: string) => {
+    (gpxContent: string, name: string | null) => {
       try {
         setErrorMessage(null)
         const parsed = parseGpxString(gpxContent)
         setRoute(parsed)
-        setFileName(name)
-        processRouteAndWeather(parsed, settings)
+        setCustomFileName(name)
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : t('gpxReadError')
         setErrorMessage(msg)
       }
     },
-    [processRouteAndWeather, settings, t]
+    [t]
   )
 
   const scanActiveTab = useCallback(async () => {
@@ -141,39 +135,15 @@ function AppContent() {
   }, [handleGpxLoaded, lang])
 
   useEffect(() => {
-    if (route) {
-      processRouteAndWeather(route, settings)
-    }
     scanActiveTab()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scanActiveTab])
 
-  // Projection automatique sur la carte Komoot dès que les calculs météo sont prêts
-  useEffect(() => {
-    if (detectedTab?.tabId && checkpoints.length > 0 && weatherSummary) {
-      injectWeatherIntoKomootTab(
-        detectedTab.tabId,
-        checkpoints,
-        settings,
-        weatherSummary,
-        lang
-      ).catch((err) => {
-        console.warn('Erreur projection automatique Komoot :', err)
-      })
-    }
-  }, [checkpoints, weatherSummary, detectedTab?.tabId, settings, lang])
-
-  // Rafraîchissement manuel ou modification de paramètres
   const handleSettingsChange = (newSettings: RideSettings) => {
     setSettings(newSettings)
-    if (route) {
-      processRouteAndWeather(route, newSettings)
-    }
   }
 
   const handleManualRefresh = () => {
-    if (route) {
-      processRouteAndWeather(route, settings)
-    }
+    setRefreshTrigger((prev) => prev + 1)
   }
 
   const departureDate = new Date(settings.departureTime)
@@ -329,14 +299,14 @@ function AppContent() {
               route={route}
               checkpoints={checkpoints}
               selectedCheckpointId={selectedCheckpointId}
-              onSelectCheckpoint={(id) => setSelectedCheckpointId(id)}
+              onSelectCheckpoint={setSelectedCheckpointId}
             />
 
             <ElevationProfile
               points={route.points}
               checkpoints={checkpoints}
               selectedCheckpointId={selectedCheckpointId}
-              onSelectCheckpoint={(id) => setSelectedCheckpointId(id)}
+              onSelectCheckpoint={setSelectedCheckpointId}
             />
           </div>
         )}
@@ -346,7 +316,7 @@ function AppContent() {
           <WeatherTimeline
             checkpoints={checkpoints}
             selectedCheckpointId={selectedCheckpointId}
-            onSelectCheckpoint={(id) => setSelectedCheckpointId(id)}
+            onSelectCheckpoint={setSelectedCheckpointId}
           />
         )}
       </main>

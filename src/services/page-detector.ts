@@ -1,6 +1,4 @@
-import type { Checkpoint, RideSettings, SegmentWeatherSummary } from '../types'
-import { getWmoWeatherDetails } from './weather'
-import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './komoot-in-page'
+
 
 export interface DetectedTabInfo {
   tabId: number
@@ -24,11 +22,19 @@ export function coordinatesToGpx(
   items: Array<{ lat: number; lng?: number; lon?: number; alt?: number; ele?: number }>,
   tourName: string = 'Parcours Komoot'
 ): string {
-  const validItems = items.filter(
-    (pt) =>
+  const validItems = items.filter((pt) => {
+    const lon = pt.lng !== undefined ? pt.lng : pt.lon
+    return (
       typeof pt.lat === 'number' &&
-      (typeof pt.lng === 'number' || typeof pt.lon === 'number')
-  )
+      Number.isFinite(pt.lat) &&
+      typeof lon === 'number' &&
+      Number.isFinite(lon) &&
+      pt.lat >= -90 &&
+      pt.lat <= 90 &&
+      lon >= -180 &&
+      lon <= 180
+    )
+  })
 
   if (validItems.length < 2) {
     throw new Error('Moins de 2 coordonnées GPS valides trouvées.')
@@ -37,12 +43,19 @@ export function coordinatesToGpx(
   const trkpts = validItems
     .map((pt) => {
       const lon = pt.lng !== undefined ? pt.lng : pt.lon!
-      const ele = Math.round(pt.alt !== undefined ? pt.alt : pt.ele || 0)
+      const rawAlt = pt.alt !== undefined ? pt.alt : pt.ele || 0
+      const ele = Math.round(Number.isFinite(rawAlt) ? rawAlt : 0)
       return `    <trkpt lat="${pt.lat.toFixed(6)}" lon="${lon.toFixed(6)}"><ele>${ele}</ele></trkpt>`
     })
     .join('\n')
 
-  const safeName = tourName.replace(/[<>&"']/g, '').trim() || 'Trace Komoot'
+  const safeName = (tourName || 'Trace Komoot')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .trim()
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="VeloMeteo" xmlns="http://www.topografix.com/GPX/1/1">
@@ -489,83 +502,5 @@ export async function extractFromActiveTab(
     }
   }
 }
-
-/**
- * Projette les balises météo et le widget directement sur la carte de la page Komoot.
- */
-export async function injectWeatherIntoKomootTab(
-  tabId: number,
-  checkpoints: Checkpoint[],
-  settings: RideSettings,
-  summary: SegmentWeatherSummary,
-  lang: 'fr' | 'en' = 'fr'
-): Promise<{ success: boolean; message?: string }> {
-  // @ts-expect-error chrome extension API
-  if (typeof chrome === 'undefined' || !chrome?.scripting?.executeScript) {
-    return {
-      success: false,
-      message:
-        lang === 'en'
-          ? 'The chrome.scripting API is not available.'
-          : "L'API chrome.scripting n'est pas disponible.",
-    }
-  }
-
-  const payload: InjectedWeatherPayload = {
-    lang,
-    checkpoints: checkpoints.map((cp) => {
-      const w = cp.weather
-      const wmo = w ? getWmoWeatherDetails(w.weatherCode, lang) : { label: 'Météo', icon: '⛅' }
-      return {
-        id: cp.id,
-        lat: cp.lat,
-        lon: cp.lon,
-        bearing: cp.bearing,
-        distKm: cp.distKm,
-        elevationM: cp.elevationM,
-        estimatedTimeStr: cp.estimatedTime.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        temperature: w?.temperature ?? 18,
-        apparentTemperature: w?.apparentTemperature ?? 18,
-        windSpeed: w?.windSpeed ?? 0,
-        windGusts: w?.windGusts ?? 0,
-        windDirection: w?.windDirection ?? 0,
-        windCategory: w?.windCategory ?? 'headwind',
-        windCategoryLabel: w?.windCategoryLabel ?? 'Vent',
-        windCategoryColor: w?.windCategoryColor ?? '#64748b',
-        weatherIcon: wmo.icon,
-        weatherLabel: wmo.label,
-        precipitationProb: w?.precipitationProb ?? 0,
-        precipitationMm: w?.precipitationMm ?? 0,
-        headwindComponent: w?.headwindComponent ?? 0,
-        crosswindComponent: w?.crosswindComponent ?? 0,
-      }
-    }),
-    summary,
-    settings: {
-      departureTime: settings.departureTime,
-      targetSpeedKmH: settings.targetSpeedKmH,
-    },
-  }
-
-  try {
-    // @ts-expect-error chrome extension API
-    const injectionResults = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: injectWeatherOnKomootMap,
-      args: [payload],
-    })
-
-    return injectionResults?.[0]?.result || { success: true }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Erreur inconnue'
-    return { success: false, message: msg }
-  }
-}
-
-export const injectWeatherIntoTab = injectWeatherIntoKomootTab
 
 

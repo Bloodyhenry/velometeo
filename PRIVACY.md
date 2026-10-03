@@ -25,7 +25,7 @@ Cette politique de confidentialité explique comment vos données sont traitées
 
 ### B. Requêtes vers l'API météo (Open-Meteo)
 Pour calculer les prévisions (direction du vent, vitesse, rafales, température, pluie), l'extension envoie une requête HTTP directe depuis votre navigateur vers les serveurs d'**Open-Meteo** (`api.open-meteo.com`).
-- **Données transmises** : Une liste de coordonnées géographiques (latitude, longitude) correspondant aux balises d'échantillonnage de votre parcours, ainsi que les heures de passage estimées.
+- **Données transmises** : Une liste de coordonnées géographiques arrondies à ~1 km (2 décimales pour préserver votre vie privée et ne pas révéler votre adresse précise) correspondant aux balises d'échantillonnage de votre parcours, ainsi que les heures de passage estimées.
 - **Absence d'identifiant** : Aucun identifiant personnel, nom, adresse IP persistante ou cookie tiers n'est associé à cette requête par VeloMétéo.
 - Pour plus d'informations sur leur politique : [Politique de confidentialité d'Open-Meteo](https://open-meteo.com/en/features#terms).
 
@@ -40,8 +40,8 @@ Conformément aux exigences du Chrome Web Store et de l'écosystème Chromium :
 
 | Permission | Pourquoi est-elle nécessaire ? |
 | :--- | :--- |
-| `activeTab` / `tabs` | Permet de détecter si l'onglet actif est une page de parcours Komoot compatible (`komoot.com/tour/...`). |
-| `scripting` | Permet d'injecter l'affichage météo (balises sur la carte et widget flottant récapitulatif) sur la page du tour actif à la demande de l'utilisateur. |
+| `activeTab` / `tabs` | Permet de détecter si l'onglet actif est une page de parcours Komoot ou Strava compatible. |
+| `scripting` | Permet d'extraire les coordonnées du tracé en cours sur la page hôte lors de l'import automatique. |
 | `sidePanel` | Permet d'ouvrir l'interface de contrôle dans le volet latéral natif du navigateur pour une ergonomie optimale. |
 | `host_permissions` (`*.komoot.*`) | Nécessaire pour communiquer avec la page du tour Komoot et récupérer les coordonnées du tracé. |
 | `host_permissions` (`api.open-meteo.com`) | Nécessaire pour récupérer les données météorologiques sans blocage CORS. |

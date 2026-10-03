@@ -64,14 +64,26 @@ export function parseGpxString(gpxText: string): RouteData {
     throw new Error('La trace GPX doit contenir au moins 2 points GPS.')
   }
 
-  // Extraction brute
-  const rawPoints = ptElements.map((el) => {
-    const lat = parseFloat(el.getAttribute('lat') || '0')
-    const lon = parseFloat(el.getAttribute('lon') || '0')
-    const eleEl = el.querySelector('ele')
-    const ele = eleEl ? parseFloat(eleEl.textContent || '0') : 0
-    return { lat, lon, ele }
-  })
+  // Extraction brute avec validation stricte
+  const rawPoints = ptElements
+    .map((el) => {
+      const latAttr = el.getAttribute('lat')
+      const lonAttr = el.getAttribute('lon')
+      if (!latAttr || !lonAttr) return null
+      const lat = parseFloat(latAttr)
+      const lon = parseFloat(lonAttr)
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) return null
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null
+      const eleEl = el.querySelector('ele')
+      const eleParsed = eleEl ? parseFloat(eleEl.textContent || '0') : 0
+      const ele = Number.isFinite(eleParsed) ? eleParsed : 0
+      return { lat, lon, ele }
+    })
+    .filter((pt): pt is { lat: number; lon: number; ele: number } => pt !== null)
+
+  if (rawPoints.length < 2) {
+    throw new Error('La trace GPX doit contenir au moins 2 points GPS valides.')
+  }
 
   // ponytail: lissage 3-points pour éliminer les micro-sauts d'altitude des GPS barométriques.
   // Plafond connu : atténue légèrement les bosses de 2 mètres, upgrade possible vers filtre Savitzky-Golay.

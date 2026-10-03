@@ -10,6 +10,10 @@ interface ElevationProfileProps {
   onSelectCheckpoint?: (id: string) => void
 }
 
+const CHART_WIDTH = 800
+const CHART_HEIGHT = 180
+const CHART_PADDING = { top: 28, right: 20, bottom: 24, left: 45 }
+
 export const ElevationProfile: React.FC<ElevationProfileProps> = ({
   points,
   checkpoints,
@@ -20,57 +24,67 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
-  if (points.length < 2) return null
+  // ponytail: Mémorisation complète des données géométriques SVG pour éviter de recalculer à chaque frame de survol
+  const chartData = React.useMemo(() => {
+    if (points.length < 2) return null
+    const totalDist = points[points.length - 1].dist
+    let minEle = points[0].ele
+    let maxEle = points[0].ele
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].ele < minEle) minEle = points[i].ele
+      if (points[i].ele > maxEle) maxEle = points[i].ele
+    }
+    const eleSpan = Math.max(50, maxEle - minEle)
 
-  const width = 800
-  const height = 180
-  const padding = { top: 28, right: 20, bottom: 24, left: 45 }
+    const getX = (distKm: number) =>
+      CHART_PADDING.left +
+      (distKm / (totalDist || 1)) * (CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right)
 
-  const totalDist = points[points.length - 1].dist
-  const minEle = Math.min(...points.map((p) => p.ele))
-  const maxEle = Math.max(...points.map((p) => p.ele))
-  const eleSpan = Math.max(50, maxEle - minEle)
+    const getY = (eleM: number) =>
+      CHART_HEIGHT -
+      CHART_PADDING.bottom -
+      ((eleM - minEle) / eleSpan) * (CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom)
 
-  // Coordonnées SVG
-  const getX = (distKm: number) =>
-    padding.left + (distKm / (totalDist || 1)) * (width - padding.left - padding.right)
+    const pathData = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${getX(p.dist).toFixed(1)} ${getY(p.ele).toFixed(1)}`)
+      .join(' ')
 
-  const getY = (eleM: number) =>
-    height - padding.bottom - ((eleM - minEle) / eleSpan) * (height - padding.top - padding.bottom)
+    const areaData = `${pathData} L ${getX(totalDist).toFixed(1)} ${CHART_HEIGHT - CHART_PADDING.bottom} L ${CHART_PADDING.left} ${CHART_HEIGHT - CHART_PADDING.bottom} Z`
 
-  // Tracé SVG de la courbe
-  const pathData = points
-    .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${getX(p.dist).toFixed(1)} ${getY(p.ele).toFixed(1)}`)
-    .join(' ')
+    const eleTicks = [minEle, Math.round(minEle + eleSpan / 2), maxEle]
 
-  const areaData = `${pathData} L ${getX(totalDist).toFixed(1)} ${height - padding.bottom} L ${padding.left} ${height - padding.bottom} Z`
+    return { totalDist, getX, getY, pathData, areaData, eleTicks }
+  }, [points])
 
-  // Échelle d'altitude (3 repères horizontaux)
-  const eleTicks = [
-    minEle,
-    Math.round(minEle + eleSpan / 2),
-    maxEle,
-  ]
+  if (!chartData || points.length < 2) return null
+  const { totalDist, getX, getY, pathData, areaData, eleTicks } = chartData
 
-  // Gestion du survol
+  // ponytail: Recherche binaire O(log N) sur les distances ordonnées pour un survol fluide
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
     const mouseX = e.clientX - rect.left
-    const svgX = (mouseX / rect.width) * width
-    const ratio = Math.max(0, Math.min(1, (svgX - padding.left) / (width - padding.left - padding.right)))
+    const svgX = (mouseX / rect.width) * CHART_WIDTH
+    const ratio = Math.max(
+      0,
+      Math.min(1, (svgX - CHART_PADDING.left) / (CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right))
+    )
     const targetDist = ratio * totalDist
 
-    // Trouve le point le plus proche
-    let closestIdx = 0
-    let minDiff = Infinity
-    for (let i = 0; i < points.length; i++) {
-      const diff = Math.abs(points[i].dist - targetDist)
-      if (diff < minDiff) {
-        minDiff = diff
-        closestIdx = i
+    let low = 0
+    let high = points.length - 1
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (points[mid].dist < targetDist) {
+        low = mid + 1
+      } else {
+        high = mid
       }
     }
+    const closestIdx =
+      low > 0 && Math.abs(points[low - 1].dist - targetDist) < Math.abs(points[low].dist - targetDist)
+        ? low - 1
+        : low
     setHoverIndex(closestIdx)
   }
 
@@ -87,7 +101,9 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
 
       <div ref={containerRef} className="relative w-full aspect-[800/180]">
         <svg
-          viewBox={`0 0 ${width} ${height}`}
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          role="img"
+          aria-label={t('profileTitle')}
           className="w-full h-full overflow-visible select-none"
           onMouseMove={handleMouseMove}
           onMouseLeave={() => setHoverIndex(null)}
@@ -105,15 +121,15 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
             return (
               <g key={tick}>
                 <line
-                  x1={padding.left}
+                  x1={CHART_PADDING.left}
                   y1={y}
-                  x2={width - padding.right}
+                  x2={CHART_WIDTH - CHART_PADDING.right}
                   y2={y}
                   stroke="#e2e8f0"
                   strokeDasharray="3 3"
                 />
                 <text
-                  x={padding.left - 6}
+                  x={CHART_PADDING.left - 6}
                   y={y + 3}
                   textAnchor="end"
                   className="text-[10px] fill-slate-400 font-mono"
@@ -157,7 +173,7 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
                   x1={cx}
                   y1={cy}
                   x2={cx}
-                  y2={height - padding.bottom}
+                  y2={CHART_HEIGHT - CHART_PADDING.bottom}
                   stroke={isSelected ? '#2563eb' : '#cbd5e1'}
                   strokeWidth={isSelected ? '2' : '1'}
                   strokeDasharray={isSelected ? 'none' : '2 2'}
@@ -205,9 +221,9 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
             <g>
               <line
                 x1={getX(hoveredPoint.dist)}
-                y1={padding.top}
+                y1={CHART_PADDING.top}
                 x2={getX(hoveredPoint.dist)}
-                y2={height - padding.bottom}
+                y2={CHART_HEIGHT - CHART_PADDING.bottom}
                 stroke="#0f172a"
                 strokeWidth="1.5"
                 strokeDasharray="2 2"
@@ -225,23 +241,23 @@ export const ElevationProfile: React.FC<ElevationProfileProps> = ({
 
           {/* Axe X (km) */}
           <line
-            x1={padding.left}
-            y1={height - padding.bottom}
-            x2={width - padding.right}
-            y2={height - padding.bottom}
+            x1={CHART_PADDING.left}
+            y1={CHART_HEIGHT - CHART_PADDING.bottom}
+            x2={CHART_WIDTH - CHART_PADDING.right}
+            y2={CHART_HEIGHT - CHART_PADDING.bottom}
             stroke="#94a3b8"
             strokeWidth="1"
           />
           <text
-            x={padding.left}
-            y={height - 8}
+            x={CHART_PADDING.left}
+            y={CHART_HEIGHT - 8}
             className="text-[10px] fill-slate-500 font-mono"
           >
             0 km
           </text>
           <text
-            x={width - padding.right}
-            y={height - 8}
+            x={CHART_WIDTH - CHART_PADDING.right}
+            y={CHART_HEIGHT - 8}
             textAnchor="end"
             className="text-[10px] fill-slate-500 font-mono"
           >

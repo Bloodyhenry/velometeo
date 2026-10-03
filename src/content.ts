@@ -10,11 +10,15 @@ import { injectWeatherOnKomootMap, type InjectedWeatherPayload } from './service
 import { coordinatesToGpx } from './services/page-detector'
 import { parseGpxString } from './services/gpx'
 import { getStravaInfoFromUrl, fetchStravaGpx, decodePolyline } from './services/strava'
-import { getBrowserLang } from './services/i18n'
+import { getBrowserLang } from './services/i18n-core'
 import type { Checkpoint, RideSettings, RouteData, SegmentWeatherSummary } from './types'
 
-// Intercepteur fetch pour capturer les tracés et flux Strava / Komoot dès leur réception réseau
-if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+// ponytail: Sniffer réseau activé uniquement sur Strava pour capturer les flux routes/streams en temps réel
+if (
+  typeof window !== 'undefined' &&
+  typeof window.fetch === 'function' &&
+  window.location.hostname.includes('strava.')
+) {
   const origFetch = window.fetch
   // @ts-expect-error global sniffer flag
   if (!window.__velometeoFetchSnifferInstalled) {
@@ -25,38 +29,53 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
       try {
         const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url || ''
         if (
-          url.includes('/routes') ||
-          url.includes('/streams') ||
-          url.includes('/api/v3/routes') ||
-          url.includes('/coordinates')
+          response.ok &&
+          (url.includes('/routes') ||
+            url.includes('/streams') ||
+            url.includes('/api/v3/routes'))
         ) {
-          const clone = response.clone()
-          clone.json().then((data) => {
-            if (!data) return
-            const poly = data.polyline || data.summary_polyline || data.map?.polyline || data.map?.summary_polyline
-            if (poly && typeof poly === 'string') {
-              const pts = decodePolyline(poly)
-              if (pts.length > 2) {
-                // @ts-expect-error global captured route
-                window.__velometeoCapturedRoute = { points: pts, name: data.name || data.title }
-                runAutoWeather()
-              }
-            } else if (Array.isArray(data.legs) && data.legs.length > 0) {
-              const pts: Array<{ lat: number; lng: number }> = []
-              for (const leg of data.legs) {
-                const lp = leg.polyline || leg.summary_polyline || (typeof leg.geometry === 'string' ? leg.geometry : null)
-                if (lp) pts.push(...decodePolyline(lp))
-              }
-              if (pts.length > 2) {
-                // @ts-expect-error global captured route
-                window.__velometeoCapturedRoute = {
-                  points: pts,
-                  name: data.name || (getBrowserLang() === 'en' ? 'Strava route' : 'Itinéraire Strava'),
+          const contentType = response.headers?.get('content-type') || ''
+          if (contentType.includes('json')) {
+            const clone = response.clone()
+            clone
+              .json()
+              .then((data) => {
+                if (!data) return
+                const poly =
+                  data.polyline ||
+                  data.summary_polyline ||
+                  data.map?.polyline ||
+                  data.map?.summary_polyline
+                if (poly && typeof poly === 'string') {
+                  const pts = decodePolyline(poly)
+                  if (pts.length > 2) {
+                    // @ts-expect-error global captured route
+                    window.__velometeoCapturedRoute = { points: pts, name: data.name || data.title }
+                    runAutoWeather()
+                  }
+                } else if (Array.isArray(data.legs) && data.legs.length > 0) {
+                  const pts: Array<{ lat: number; lng: number }> = []
+                  for (const leg of data.legs) {
+                    const lp =
+                      leg.polyline ||
+                      leg.summary_polyline ||
+                      (typeof leg.geometry === 'string' ? leg.geometry : null)
+                    if (lp) pts.push(...decodePolyline(lp))
+                  }
+                  if (pts.length > 2) {
+                    // @ts-expect-error global captured route
+                    window.__velometeoCapturedRoute = {
+                      points: pts,
+                      name:
+                        data.name ||
+                        (getBrowserLang() === 'en' ? 'Strava route' : 'Itinéraire Strava'),
+                    }
+                    runAutoWeather()
+                  }
                 }
-                runAutoWeather()
-              }
-            }
-          }).catch(() => {})
+              })
+              .catch(() => {})
+          }
         }
       } catch {}
       return response
@@ -66,12 +85,10 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 
 function getDefaultDepartureTime(): string {
   const d = new Date()
-  // Si consultation en soirée (après 18h), proposer le lendemain matin à 08:30
   if (d.getHours() >= 18) {
     d.setDate(d.getDate() + 1)
     d.setHours(8, 30, 0, 0)
   } else {
-    // Sinon proposer le prochain créneau de 15 minutes
     const mins = Math.ceil(d.getMinutes() / 15) * 15
     d.setMinutes(mins, 0, 0)
   }
@@ -87,7 +104,11 @@ interface TourItem {
 
 let activeTourId: string | null = null
 let cachedRoute: RouteData | null = null
+let cachedPayload: InjectedWeatherPayload | null = null
 let isRunning = false
+let retryCount = 0
+const MAX_RETRIES = 4
+
 let currentSettings: RideSettings = {
   departureTime: getDefaultDepartureTime(),
   targetSpeedKmH: 25,
@@ -175,6 +196,7 @@ async function handleSettingsChange(partial: {
     const summary = computeRideWeatherSummary(withWeather, lang)
 
     const payload = buildPayload(withWeather, summary, currentSettings)
+    cachedPayload = payload
 
     // @ts-expect-error global refresh hook
     if (typeof window.__velometeoRefreshMarkers === 'function') {
@@ -185,10 +207,14 @@ async function handleSettingsChange(partial: {
     }
   } catch (err) {
     console.warn('[VeloMétéo] Erreur actualisation météo :', err)
+    // @ts-expect-error global hook
+    if (typeof window.__velometeoSetLoading === 'function') {
+      // @ts-expect-error global hook
+      window.__velometeoSetLoading(false)
+    }
   }
 }
 
-// Expose au niveau window pour que les sliders puissent l'appeler directement
 // @ts-expect-error global hook
 window.__velometeoOnSettingsChange = handleSettingsChange
 
@@ -197,6 +223,18 @@ async function runAutoWeather(): Promise<void> {
   if (!item) return
 
   const itemKey = `${item.platform}-${item.type || 'tour'}-${item.id}`
+
+  // Invalidation au changement de tracé pour ne pas réutiliser le tracé précédent
+  if (activeTourId && activeTourId !== itemKey) {
+    activeTourId = null
+    cachedRoute = null
+    cachedPayload = null
+    retryCount = 0
+    // @ts-expect-error global captured route cleanup
+    delete window.__velometeoCapturedRoute
+    // @ts-expect-error global captured gpx cleanup
+    delete window.__velometeoActiveGpx
+  }
 
   // Évite de ré-exécuter en boucle si déjà injecté sur le même tour ou activité
   // @ts-expect-error global flag
@@ -208,6 +246,25 @@ async function runAutoWeather(): Promise<void> {
   isRunning = true
 
   try {
+    // ponytail: Si la météo a déjà été calculée mais que la carte n'était pas prête, réutiliser le payload sans réinterroger Open-Meteo
+    if (cachedPayload && cachedRoute) {
+      const injectRes = await injectWeatherOnKomootMap(cachedPayload, handleSettingsChange)
+      if (injectRes.success) {
+        activeTourId = itemKey
+        // @ts-expect-error global flag
+        window.__velometeoInjectedTour = itemKey
+        retryCount = 0
+      } else if (retryCount < MAX_RETRIES) {
+        retryCount++
+        setTimeout(() => {
+          if (!document.getElementById('velometeo-komoot-overlay')) {
+            runAutoWeather()
+          }
+        }, 1500)
+      }
+      return
+    }
+
     let gpxText: string | null = null
 
     if (item.platform === 'komoot') {
@@ -239,20 +296,24 @@ async function runAutoWeather(): Promise<void> {
     }
 
     if (!gpxText) {
-      // Nouvelle tentative différée si les éléments ou la carte sont encore en cours de montage
-      setTimeout(() => {
-        if (!document.getElementById('velometeo-komoot-overlay')) {
-          runAutoWeather()
-        }
-      }, 1500)
+      // Nouvelle tentative différée bornée à MAX_RETRIES
+      if (retryCount < MAX_RETRIES) {
+        retryCount++
+        setTimeout(() => {
+          if (!document.getElementById('velometeo-komoot-overlay')) {
+            runAutoWeather()
+          }
+        }, 1500)
+      }
       return
     }
 
-    // Sauvegarde globale pour l'extension popup
     // @ts-expect-error global cache
     window.__velometeoActiveGpx = gpxText
     const lang = getBrowserLang()
-    const headingText = (document.querySelector('h1')?.textContent?.trim() || document.title).replace(/\s*[-|•].*(?:komoot|strava).*$/i, '').trim()
+    const headingText = (document.querySelector('h1')?.textContent?.trim() || document.title)
+      .replace(/\s*[-|•].*(?:komoot|strava).*$/i, '')
+      .trim()
     // @ts-expect-error global cache
     window.__velometeoActiveTourTitle =
       headingText ||
@@ -280,13 +341,16 @@ async function runAutoWeather(): Promise<void> {
 
     // 5. Préparation du payload et injection sur la carte
     const payload = buildPayload(withWeather, summary, currentSettings)
+    cachedPayload = payload
 
     const injectRes = await injectWeatherOnKomootMap(payload, handleSettingsChange)
     if (injectRes.success) {
       activeTourId = itemKey
       // @ts-expect-error global flag
       window.__velometeoInjectedTour = itemKey
-    } else {
+      retryCount = 0
+    } else if (retryCount < MAX_RETRIES) {
+      retryCount++
       console.warn('[VeloMétéo] Carte non encore prête, nouvelle tentative sous peu :', injectRes.message)
       setTimeout(() => {
         if (!document.getElementById('velometeo-komoot-overlay')) {
@@ -321,7 +385,7 @@ setInterval(() => {
       runAutoWeather()
     }
   }
-}, 1200)
+}, 1500)
 
 window.addEventListener('popstate', () => {
   const current = getCurrentTourItem()
@@ -330,15 +394,3 @@ window.addEventListener('popstate', () => {
     runAutoWeather()
   }
 })
-
-// Sur Strava /maps ou builder, si aucun tracé n'est encore affiché, vérifier périodiquement si un tracé est apparu
-if (typeof window !== 'undefined' && window.location.hostname.includes('strava.')) {
-  setInterval(() => {
-    if (!document.getElementById('velometeo-komoot-overlay') && !isRunning) {
-      const item = getCurrentTourItem()
-      if (item) {
-        runAutoWeather()
-      }
-    }
-  }, 2500)
-}

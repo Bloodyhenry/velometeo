@@ -164,6 +164,7 @@ export async function injectWeatherOnKomootMap(
           }
         },
         on(_evt: string, cb: () => void) {
+          if (isListening && rafId !== null) return
           isListening = true
 
           // ponytail: NE JAMAIS enregistrer de callbacks JS directes dans Djinni C++/WASM (addPostUpdateListener/addInteractionListener).
@@ -483,7 +484,7 @@ export async function injectWeatherOnKomootMap(
             line-height: 1;
             color: white;
           ">
-            <span style="transform: rotate(${cp.windDirection + 180}deg); display: inline-block;">➔</span>
+            <span style="transform: rotate(${cp.windDirection + 90}deg); display: inline-block;">➔</span>
           </div>
           <span>${Math.round(cp.temperature)}°</span>
           <span style="font-size: 10px; opacity: 0.85;">${cp.windSpeed}k</span>
@@ -787,9 +788,16 @@ export async function injectWeatherOnKomootMap(
       triggerUpdate({ targetSpeedKmH: val })
     })
 
+    // @ts-expect-error global hook
+    window.__velometeoSetLoading = (loading: boolean) => {
+      const badge = widget.querySelector('#velometeo-loading-badge') as HTMLElement
+      if (badge) badge.style.display = loading ? 'inline' : 'none'
+    }
+
     const inputDeparture = widget.querySelector('#velometeo-input-departure') as HTMLInputElement
     inputDeparture?.addEventListener('change', (e) => {
       const val = (e.target as HTMLInputElement).value
+      if (!val || Number.isNaN(Date.parse(val))) return
       triggerUpdate({ departureTime: val })
     })
 

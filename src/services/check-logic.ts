@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import { calculateBearing, haversineDistanceM } from './gpx'
 import { computeTrajectoryTiming, getGradeSpeedFactor } from './physics'
 import { classifyRelativeWind } from './weather'
-import { GpxPoint, RideSettings } from '../types'
+import type { GpxPoint, RideSettings } from '../types'
 
 console.log('--- Running Ponytail Logic Self-Check ---')
 
@@ -116,6 +116,22 @@ const cps20km = generateCheckpoints(testRoute, { ...settings, checkpointInterval
 
 assert(cps5km.length > cps10km.length, `5km checkpoints (${cps5km.length}) should be > 10km (${cps10km.length})`)
 assert(cps10km.length > cps20km.length, `10km checkpoints (${cps10km.length}) should be > 20km (${cps20km.length})`)
+
+// ponytail: Vérification que le cap d'arrivée est calculé dans le sens de la marche
+const eastPoints: GpxPoint[] = longRoutePoints.map((p) => ({
+  ...p,
+  lat: 45.0,
+  lon: 5.0 + p.dist * 0.01,
+}))
+const eastRoute: RouteData = { ...testRoute, points: eastPoints }
+const eastTimings = computeTrajectoryTiming(eastPoints, settings)
+const eastCps = generateCheckpoints(eastRoute, settings, eastTimings)
+const lastEastCp = eastCps[eastCps.length - 1]
+assert(
+  Math.abs(lastEastCp.bearing - 90) < 5,
+  `Le cap d'arrivée sur une trace plein Est doit être ~90° (obtenu: ${lastEastCp.bearing}°)`
+)
+
 console.log(`✓ Checkpoint interval scaling OK (5km: ${cps5km.length}, 10km: ${cps10km.length}, 20km: ${cps20km.length})`)
 
 // 8. Check De-collision on Out-and-back (Aller / Retour) traces

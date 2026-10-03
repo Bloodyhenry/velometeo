@@ -51,8 +51,16 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
           return (
             <div
               key={cp.id}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelectCheckpoint?.(cp.id)
+                }
+              }}
               onClick={() => onSelectCheckpoint?.(cp.id)}
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 isSelected
                   ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-300 shadow-sm'
                   : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
@@ -116,7 +124,7 @@ export const WeatherTimeline: React.FC<WeatherTimelineProps> = ({
                         style={{ backgroundColor: w.windCategoryColor }}
                         className="w-7 h-7 rounded-full text-white flex items-center justify-center font-bold text-xs shadow-xs"
                       >
-                        <div style={{ transform: `rotate(${w.windDirection + 180}deg)` }}>
+                        <div style={{ transform: `rotate(${w.windDirection + 90}deg)` }}>
                           ➔
                         </div>
                       </div>

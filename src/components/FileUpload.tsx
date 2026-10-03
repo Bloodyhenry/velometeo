@@ -41,15 +41,21 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-      <div
+      <label
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            fileInputRef.current?.click()
+          }
+        }}
         onDragOver={(e) => {
           e.preventDefault()
           setIsDragging(true)
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
+        className={`block border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors focus:ring-2 focus:ring-blue-500 focus:outline-none ${
           isDragging
             ? 'border-blue-500 bg-blue-50/50'
             : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
@@ -73,7 +79,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             {t('dropzoneText')} <span className="text-blue-600 font-semibold">.GPX</span> {t('dropzoneTextAfter')}
           </p>
         </div>
-      </div>
+      </label>
 
       <div className="flex justify-end">
         <button
@@ -81,7 +87,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           disabled={isLoading}
           onClick={(e) => {
             e.stopPropagation()
-            onGpxLoaded(SAMPLE_GPX_CONTENT, t('demoFileNameShort'))
+            onGpxLoaded(SAMPLE_GPX_CONTENT, '')
           }}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors border border-blue-200 cursor-pointer"
         >

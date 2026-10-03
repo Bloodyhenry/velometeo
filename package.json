@@ -1,11 +1,11 @@
 {
   "name": "bold-pascal",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --target=es2022",
+    "build": "tsx src/services/check-logic.ts && tsc -b && vite build && esbuild src/content.ts --bundle --minify --outfile=dist/content.js --format=iife --target=es2022",
     "check-logic": "tsx src/services/check-logic.ts",
     "lint": "oxlint",
     "lint:firefox": "npx web-ext lint --source-dir dist",
@@ -25,6 +25,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.25.0",
     "oxlint": "^1.81.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",

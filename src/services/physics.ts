@@ -155,14 +155,23 @@ export function generateCheckpoints(
     const timeHours = timing[idx]?.cumulativeTimeHours || 0
     const estimatedTime = new Date(departureDate.getTime() + timeHours * 3600 * 1000)
 
-    // Calcul du cap moyen sur les 300 mètres suivants (ou précédents si fin)
-    let lookAheadIdx = Math.min(points.length - 1, idx + 5)
-    if (lookAheadIdx === idx && idx > 0) {
-      lookAheadIdx = idx
-      idx = Math.max(0, idx - 5)
+    // ponytail: Calcul du cap moyen sur les ~300 mètres suivants (ou précédents pour l'arrivée)
+    let bearing: number
+    if (idx < points.length - 1) {
+      let lookAheadIdx = idx + 1
+      while (lookAheadIdx < points.length - 1 && (points[lookAheadIdx].dist - pt.dist) < 0.3) {
+        lookAheadIdx++
+      }
+      const ptTarget = points[lookAheadIdx]
+      bearing = calculateBearing(pt.lat, pt.lon, ptTarget.lat, ptTarget.lon)
+    } else {
+      let lookBackIdx = idx - 1
+      while (lookBackIdx > 0 && (pt.dist - points[lookBackIdx].dist) < 0.3) {
+        lookBackIdx--
+      }
+      const ptFrom = points[lookBackIdx]
+      bearing = calculateBearing(ptFrom.lat, ptFrom.lon, pt.lat, pt.lon)
     }
-    const ptTarget = points[lookAheadIdx]
-    const bearing = calculateBearing(pt.lat, pt.lon, ptTarget.lat, ptTarget.lon)
 
     return {
       id: `cp-${step}-${Math.round(pt.dist)}`,

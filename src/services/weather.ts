@@ -4,7 +4,7 @@ import {
   getWindCategoryLabel,
   getDominantWindLabel,
   getWmoWeatherDetails,
-} from './i18n'
+} from './i18n-core'
 
 export { getWmoWeatherDetails, getDominantWindLabel }
 
@@ -79,16 +79,18 @@ interface OpenMeteoHourlyResponse {
  */
 export async function fetchWeatherForCheckpoints(
   checkpoints: Checkpoint[],
-  lang: Lang = 'fr'
+  lang: Lang = 'fr',
+  signal?: AbortSignal
 ): Promise<Checkpoint[]> {
   if (checkpoints.length === 0) return []
 
-  const lats = checkpoints.map((cp) => cp.lat.toFixed(4)).join(',')
-  const lons = checkpoints.map((cp) => cp.lon.toFixed(4)).join(',')
+  // ponytail: Coordonnées arrondies à 2 décimales (~1.1 km) pour préserver la vie privée et optimiser le cache
+  const lats = checkpoints.map((cp) => cp.lat.toFixed(2)).join(',')
+  const lons = checkpoints.map((cp) => cp.lon.toFixed(2)).join(',')
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kmh&timeformat=iso8601`
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kmh&timeformat=iso8601&forecast_days=16`
 
-  const response = await fetch(url)
+  const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(
       lang === 'en'
@@ -103,7 +105,7 @@ export async function fetchWeatherForCheckpoints(
 
   return checkpoints.map((cp, idx) => {
     const pointData = results[idx]
-    if (!pointData || !pointData.hourly) {
+    if (!pointData || !pointData.hourly || !Array.isArray(pointData.hourly.time)) {
       return cp
     }
 
@@ -123,10 +125,20 @@ export async function fetchWeatherForCheckpoints(
       }
     }
 
+    // ponytail: Si la date cible est trop éloignée des prévisions disponibles (> 4 heures), ne pas attribuer de fausse météo
+    if (minDiffMs > 4 * 3600 * 1000) {
+      return cp
+    }
+
+    const tempRaw = h.temperature_2m[closestIndex]
+    if (tempRaw === undefined || tempRaw === null || Number.isNaN(tempRaw)) {
+      return cp
+    }
+
     const windSpeed = h.wind_speed_10m[closestIndex] ?? 0
     const windDirection = h.wind_direction_10m[closestIndex] ?? 0
     const windGusts = h.wind_gusts_10m[closestIndex] ?? windSpeed
-    const temperature = h.temperature_2m[closestIndex] ?? 18
+    const temperature = tempRaw
     const apparentTemperature = h.apparent_temperature[closestIndex] ?? temperature
     const precipitationProb = h.precipitation_probability[closestIndex] ?? 0
     const precipitationMm = h.precipitation[closestIndex] ?? 0
